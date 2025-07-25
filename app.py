@@ -1,112 +1,84 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
 import joblib
-import datetime
-import requests
-from sklearn.ensemble import RandomForestRegressor
+from datetime import datetime, timedelta
 
-# ==================== 기본 설정 ====================
-st.set_page_config(page_title="Heat Illness Predictor", layout="wide")
-st.title("🌡️ Heat Illness Risk Predictor")
+# 모델 로드
+model = joblib.load("trained_model.pkl")
 
-# ==================== 유틸 함수 ====================
-
-def get_weather_from_kma(region_name):
-    """
-    기상청 API 대체용 예시 함수 (실제 API 연결 시 수정 필요)
-    """
-    sample_data = {
-        "서울특별시": [35.0, 33.1, 30.5, 27.8, 65.2],
-        "부산광역시": [33.2, 32.0, 29.7, 26.1, 70.5]
-    }
-    return sample_data.get(region_name, [np.nan] * 5)
-
-def classify_risk(predicted_count):
-    if predicted_count == 0:
+# 위험 등급 함수
+def get_risk_level(patients):
+    if patients == 0:
         return "🟢 매우 낮음"
-    elif predicted_count <= 2:
+    elif 1 <= patients <= 2:
         return "🟡 낮음"
-    elif predicted_count <= 5:
+    elif 3 <= patients <= 5:
         return "🟠 보통"
-    elif predicted_count <= 10:
+    elif 6 <= patients <= 10:
         return "🔴 높음"
     else:
         return "🔥 매우 높음"
 
-def generate_report(pred, last_year):
-    diff = pred - last_year
-    if diff > 0:
-        comment = f"작년 같은 날보다 환자가 약 {diff:.1f}명 많을 것으로 예상됩니다."
-    elif diff < 0:
-        comment = f"작년 같은 날보다 환자가 약 {-diff:.1f}명 적을 것으로 예상됩니다."
-    else:
-        comment = "작년과 같은 수준의 환자 수가 예상됩니다."
+# Streamlit UI 설정
+st.set_page_config(page_title="온열질환 예측", layout="centered")
+st.title("🌡️ 온열질환자 수 예측 대시보드")
+st.markdown("**오늘부터 최대 7일 후까지 예측이 가능합니다.**")
 
-    if pred >= 11:
-        rec = "💡 위기 경보 수준입니다. 외부 활동 자제 및 보상 조건 확인이 필요합니다."
-    elif pred >= 6:
-        rec = "⚠️ 위험 경고 수준입니다. 외출을 자제하세요."
-    elif pred >= 3:
-        rec = "🔅 주의 필요. 푸시 알림을 권장합니다."
-    else:
-        rec = "✅ 위험 수준은 낮지만 더위를 피하세요."
-    return f"{comment}\n\n{rec}"
+# 날짜 입력
+min_date = datetime.now().date()
+max_date = min_date + timedelta(days=7)
+selected_date = st.date_input("📅 날짜 선택", min_value=min_date, max_value=max_date)
 
-# ==================== 모델 로드 ====================
-model = joblib.load("trained_model.pkl")
+# 지역 선택
+region = st.selectbox("🌍 광역자치단체 선택", [
+    "서울특별시", "부산광역시", "대구광역시", "인천광역시", "광주광역시", "대전광역시", "울산광역시",
+    "세종특별자치시", "경기도", "강원도", "충청북도", "충청남도", "전라북도",
+    "전라남도", "경상북도", "경상남도", "제주특별자치도"
+])
 
-# ==================== UI: 입력 폼 ====================
-st.subheader("📅 Step 1. 날짜 및 지역 선택")
-today = datetime.date.today()
-selected_date = st.date_input("예측 날짜를 선택하세요", min_value=today, max_value=today + datetime.timedelta(days=7), value=today)
-region = st.selectbox("광역자치단체 선택", ["서울특별시", "부산광역시", "대구광역시", "인천광역시", "광주광역시", "대전광역시", "울산광역시", "세종특별자치시", "경기도", "강원특별자치도", "충청북도", "충청남도", "전라북도", "전라남도", "경상북도", "경상남도", "제주특별자치도"])
-
-st.markdown("---")
-st.subheader("🌤️ Step 2. 기상 조건 입력")
-
-if st.button("📡 기상청 API로 불러오기"):
-    temp_values = get_weather_from_kma(region)
-    st.session_state["weather"] = temp_values
-else:
-    temp_values = st.session_state.get("weather", [np.nan]*5)
-
-col1, col2, col3, col4, col5 = st.columns(5)
+# 기상 조건 수동 입력
+st.markdown("### ☀️ 기상 조건 입력")
+col1, col2 = st.columns(2)
 with col1:
-    max_feel = st.number_input("최고체감온도(°C)", value=temp_values[0] if not np.isnan(temp_values[0]) else 0.0)
+    max_feel_temp = st.number_input("최고체감온도(°C)", value=33.0)
+    max_temp = st.number_input("최고기온(°C)", value=31.0)
+    avg_temp = st.number_input("평균기온(°C)", value=29.0)
 with col2:
-    max_temp = st.number_input("최고기온(°C)", value=temp_values[1] if not np.isnan(temp_values[1]) else 0.0)
-with col3:
-    mean_temp = st.number_input("평균기온(°C)", value=temp_values[2] if not np.isnan(temp_values[2]) else 0.0)
-with col4:
-    min_temp = st.number_input("최저기온(°C)", value=temp_values[3] if not np.isnan(temp_values[3]) else 0.0)
-with col5:
-    humidity = st.number_input("평균상대습도(%)", value=temp_values[4] if not np.isnan(temp_values[4]) else 0.0)
+    min_temp = st.number_input("최저기온(°C)", value=26.0)
+    avg_humidity = st.number_input("평균상대습도(%)", value=75.0)
 
-# ==================== 예측 ====================
-st.markdown("---")
-st.subheader("🔮 Step 3. 예측")
-
+# 예측 버튼
 if st.button("예측하기"):
+    # 모델 입력용 데이터프레임 (학습 시 사용한 칼럼만 사용)
     input_data = pd.DataFrame([{
-        "최고체감온도(°C)": max_feel,
+        "최고체감온도(°C)": max_feel_temp,
         "최고기온(°C)": max_temp,
-        "평균기온(°C)": mean_temp,
+        "평균기온(°C)": avg_temp,
         "최저기온(°C)": min_temp,
-        "평균상대습도(%)": humidity,
-        "연도": selected_date.year,
-        "월": selected_date.month,
+        "평균상대습도(%)": avg_humidity
     }])
 
+    # 예측
     pred = model.predict(input_data)[0]
-    pred = max(0, round(pred, 1))
+    risk = get_risk_level(pred)
 
-    # 예시 전년도 값
-    last_year_estimate = pred - np.random.randint(-3, 3)
-    last_year_estimate = max(0, last_year_estimate)
+    # 결과 표시
+    st.subheader("📊 예측 결과")
+    st.write(f"예측 날짜: **{selected_date.strftime('%Y-%m-%d')}**")
+    st.write(f"선택 지역: **{region}**")
+    st.write(f"예측 환자 수: **{int(pred)} 명**")
+    st.write(f"위험 등급: **{risk}**")
 
-    st.success(f"✅ 예측 환자 수: {pred}명")
-    st.info(f"위험 등급: {classify_risk(pred)}")
+    # 대응 안내
     st.markdown("---")
-    st.subheader("📝 예측 리포트")
-    st.write(generate_report(pred, last_year_estimate))
+    st.subheader("📄 대응 분석 리포트")
+    if pred == 0:
+        st.info("위험이 매우 낮습니다. 별도의 대응이 필요하지 않습니다.")
+    elif pred <= 2:
+        st.info("낮은 수준의 위험입니다. 실외 활동 전 수분 섭취를 권장합니다.")
+    elif pred <= 5:
+        st.warning("주의가 필요합니다. 온열질환 예방 수칙을 안내해주세요.")
+    elif pred <= 10:
+        st.error("위험 경보 수준입니다. 노약자 외출 자제 권고가 필요합니다.")
+    else:
+        st.error("위기 경보입니다. 자동 보상 트리거 발동 가능성이 있습니다.")
