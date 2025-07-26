@@ -80,7 +80,7 @@ def get_weather_from_api(region_name):
 
     url = "https://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getUltraSrtNcst"
     params = {
-        "serviceKey": KMA_API_KEY,
+        "serviceKey": requests.utils.unquote(KMA_API_KEY),  # 디코딩 적용
         "numOfRows": "10",
         "dataType": "JSON",
         "base_date": base_date,
@@ -104,6 +104,7 @@ def get_weather_from_api(region_name):
         "avg_temp": result.get("T1H", 32.0),
         "max_feel": result.get("T1H", 32.0) + 1.5
     }
+
 
 # 리스크 판단 함수
 def get_risk_level(pred):
