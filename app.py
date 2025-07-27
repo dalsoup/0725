@@ -100,8 +100,17 @@ def get_weather_from_api(region_name):
         "ny": ny
     }
 
-    response = requests.get(url, params=params, timeout=10, verify=False)
-    items = response.json().get("response", {}).get("body", {}).get("items", {}).get("item", [])
+    try:
+        response = requests.get(url, params=params, timeout=10, verify=False)
+        data = response.json()
+        items = data.get("response", {}).get("body", {}).get("items", {}).get("item", [])
+    except requests.exceptions.JSONDecodeError:
+        st.error("기상청 API 응답이 JSON 형식이 아닙니다. 잠시 후 다시 시도해 주세요.")
+        return None
+    except Exception as e:
+        st.error(f"API 호출 중 오류 발생: {e}")
+        return None
+
     df = pd.DataFrame(items)
 
     if df.empty or "category" not in df.columns or "fcstValue" not in df.columns:
