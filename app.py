@@ -98,6 +98,9 @@ def get_weather_from_api(region_name):
     data = response.json().get("response", {}).get("body", {}).get("items", {}).get("item", [])
     result = {item["category"]: float(item["obsrValue"]) for item in data}
 
+        st.markdown("#### 🌡️ 불러온 실시간 기상 정보")
+    st.table(pd.DataFrame(result.items(), columns=["항목", "값"]))
+
     return {
         "max_temp": result.get("T1H", 32.0),
         "humidity": result.get("REH", 70.0),
