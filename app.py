@@ -81,12 +81,12 @@ def get_weather_from_api(region_name):
     nx, ny = convert_latlon_to_xy(lat, lon)
     now = datetime.datetime.now()
     base_date = now.strftime("%Y%m%d")
-    base_time = "0500"  # 예보 기준 시간 (정각 + 1시간 뒤에 제공됨)
+    base_time = "0500"
 
     url = "http://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getVilageFcst"
     params = {
         "serviceKey": KMA_API_KEY,
-        "numOfRows": "100",
+        "numOfRows": "300",
         "pageNo": "1",
         "dataType": "JSON",
         "base_date": base_date,
@@ -103,21 +103,26 @@ def get_weather_from_api(region_name):
     items = response.json().get("response", {}).get("body", {}).get("items", {}).get("item", [])
     df = pd.DataFrame(items)
 
-    # 오늘 날짜 기준만 필터링
     df = df[df["fcstDate"] == base_date]
+    df["fcstHour"] = df["fcstTime"].astype(int) // 100
+    now_hour = now.hour
+    df["hour_diff"] = abs(df["fcstHour"] - now_hour)
 
-    # 원하는 항목만 추출
-    filtered = df[df["category"].isin(["TMX", "TMN", "REH", "WSD", "T3H"])]
-    latest = filtered.groupby("category").first()
+    latest = df[df["category"].isin(["TMX", "TMN", "REH", "WSD", "T3H"])]
+    closest = latest.loc[latest.groupby("category")["hour_diff"].idxmin()]
+    closest = closest.set_index("category")
 
-    temp = float(latest.loc["T3H"]["fcstValue"]) if "T3H" in latest.index else 30.0
-    wind = float(latest.loc["WSD"]["fcstValue"]) if "WSD" in latest.index else 2.0
-    max_temp = float(latest.loc["TMX"]["fcstValue"]) if "TMX" in latest.index else 33.0
-    min_temp = float(latest.loc["TMN"]["fcstValue"]) if "TMN" in latest.index else 25.0
-    hum = float(latest.loc["REH"]["fcstValue"]) if "REH" in latest.index else 70.0
+    temp = float(closest.loc["T3H"]["fcstValue"]) if "T3H" in closest.index else 30.0
+    wind = float(closest.loc["WSD"]["fcstValue"]) if "WSD" in closest.index else 2.0
+    max_temp = float(closest.loc["TMX"]["fcstValue"]) if "TMX" in closest.index else 33.0
+    min_temp = float(closest.loc["TMN"]["fcstValue"]) if "TMN" in closest.index else 25.0
+    hum = float(closest.loc["REH"]["fcstValue"]) if "REH" in closest.index else 70.0
     feel = calculate_feels_like(temp, wind)
 
-    st.markdown("#### 🌡️ 불러온 예보 기상 정보")
+    forecast_time = closest.iloc[0]["fcstDate"] + " " + closest.iloc[0]["fcstTime"][:2] + ":00"
+    st.markdown(f"#### 🌡️ 불러온 예보 기상 정보  ")
+    st.caption(f"예보 시각 기준: {forecast_time} (가장 근접한 시각의 데이터)")
+
     display_df = pd.DataFrame({
         "항목": ["예보기온(T3H)", "풍속(WSD)", "습도(REH)", "최고기온(TMX)", "최저기온(TMN)", "체감온도"],
         "값": [temp, wind, hum, max_temp, min_temp, feel]
