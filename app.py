@@ -75,13 +75,21 @@ region_to_latlon = {
 def calculate_feels_like(temp, wind_speed):
     return round(13.12 + 0.6215*temp - 11.37*(wind_speed**0.16) + 0.3965*temp*(wind_speed**0.16), 1)
 
+# base_time 계산 함수
+def get_base_time(now):
+    hour = now.hour
+    if hour < 2:
+        return "2300", (now - datetime.timedelta(days=1)).strftime("%Y%m%d")
+    for t in [23, 20, 17, 14, 11, 8, 5, 2]:
+        if hour >= t:
+            return f"{t:02d}00", now.strftime("%Y%m%d")
+
 # 기상청 단기예보 API 호출 함수
 def get_weather_from_api(region_name):
     lat, lon = region_to_latlon.get(region_name, (37.5665, 126.9780))
     nx, ny = convert_latlon_to_xy(lat, lon)
     now = datetime.datetime.now()
-    base_date = now.strftime("%Y%m%d")
-    base_time = "0500"
+    base_time, base_date = get_base_time(now)
 
     url = "http://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getVilageFcst"
     params = {
