@@ -75,12 +75,12 @@ region_to_latlon = {
 def calculate_feels_like(temp, wind_speed):
     return round(13.12 + 0.6215*temp - 11.37*(wind_speed**0.16) + 0.3965*temp*(wind_speed**0.16), 1)
 
-# base_time 계산 함수 (T3H 포함 시간 기준)
-def get_base_time(now):
-    valid_times = [2, 5, 8, 11, 14, 17, 20, 23]
-    hour = now.hour
-    for t in reversed(valid_times):
-        if hour >= t:
+# base_time 계산 함수 (최신 예보 수집 가능 시점 고려)
+def get_valid_base_time(now):
+    valid_times = [23, 20, 17, 14, 11, 8, 5, 2]
+    for t in valid_times:
+        base_dt = now.replace(hour=t, minute=0, second=0, microsecond=0)
+        if now >= base_dt + datetime.timedelta(minutes=40):
             return f"{t:02d}00", now.strftime("%Y%m%d")
     return "2300", (now - datetime.timedelta(days=1)).strftime("%Y%m%d")
 
@@ -88,7 +88,6 @@ def get_base_time(now):
 st.title("🔥 온열질환 예측 대시보드")
 
 # 날짜 및 지역 선택 (한 줄)
-st.markdown("#### 📅 날짜 및 📍지역 선택")
 col1, col2 = st.columns(2)
 with col1:
     date_selected = st.date_input("예측 날짜", datetime.date.today())
@@ -96,48 +95,46 @@ with col2:
     region = st.selectbox("광역자치단체", list(region_to_latlon.keys()))
 
 # 기상청 API 호출 여부
-st.markdown("#### ☁️ 기상 정보 자동 불러오기")
-use_api = st.checkbox("기상청 단기예보 API 사용")
+use_api = st.checkbox("🌤️ 기상청 단기예보 API 자동 사용")
 weather_data = {}
 
 # 기상 데이터 불러오기 함수
+
 def get_weather_from_api(region_name):
     lat, lon = region_to_latlon.get(region_name, (37.5665, 126.9780))
     nx, ny = convert_latlon_to_xy(lat, lon)
     now = datetime.datetime.now()
-    base_time, base_date = get_base_time(now)
 
-    url = "http://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getVilageFcst"
-    params = {
-        "serviceKey": KMA_API_KEY,
-        "numOfRows": "300",
-        "pageNo": "1",
-        "dataType": "JSON",
-        "base_date": base_date,
-        "base_time": base_time,
-        "nx": nx,
-        "ny": ny
-    }
-
-    response = requests.get(url, params=params, timeout=10, verify=False)
-    items = response.json().get("response", {}).get("body", {}).get("items", {}).get("item", [])
-    df = pd.DataFrame(items)
-
-    if df.empty or "category" not in df.columns or "fcstValue" not in df.columns:
-        st.error("예보 데이터를 찾을 수 없습니다.")
+    tried = 0
+    while tried < 3:
+        base_time, base_date = get_valid_base_time(now - datetime.timedelta(hours=tried*3))
+        url = "http://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getVilageFcst"
+        params = {
+            "serviceKey": KMA_API_KEY,
+            "numOfRows": "300",
+            "pageNo": "1",
+            "dataType": "JSON",
+            "base_date": base_date,
+            "base_time": base_time,
+            "nx": nx,
+            "ny": ny
+        }
+        response = requests.get(url, params=params, timeout=10, verify=False)
+        items = response.json().get("response", {}).get("body", {}).get("items", {}).get("item", [])
+        df = pd.DataFrame(items)
+        if "T3H" in df.get("category", []):
+            break
+        tried += 1
+    else:
+        st.error("T3H 항목 누락 - 기상청 API 응답 불완전")
         return None
 
     df["fcstHour"] = df["fcstTime"].astype(int) // 100
     now_hour = now.hour
     df["hour_diff"] = abs(df["fcstHour"] - now_hour)
     latest = df[df["category"].isin(["TMX", "TMN", "REH", "WSD", "T3H"])]
-    closest = latest.loc[latest.groupby("category")["hour_diff"].idxmin()]
+    closest = latest.loc[latest.groupby("category")["hour_diff"].idxmin()].set_index("category")
 
-    if "T3H" not in closest["category"].values:
-        st.error("T3H 항목 누락 - 기상청 API 응답 불완전")
-        return None
-
-    closest = closest.set_index("category")
     temp = float(closest.loc["T3H"]["fcstValue"])
     wind = float(closest.loc["WSD"]["fcstValue"])
     max_temp = float(closest.loc["TMX"]["fcstValue"])
@@ -149,8 +146,8 @@ def get_weather_from_api(region_name):
     fcst_date = fcst_time_row.get("fcstDate", base_date)
     fcst_time = fcst_time_row.get("fcstTime", base_time)
     formatted_time = f"{fcst_date[:4]}-{fcst_date[4:6]}-{fcst_date[6:]} {fcst_time[:2]}:00"
-
     st.caption(f"예보 시각 기준: {formatted_time} (가장 근접한 시각의 데이터)")
+
     st.table(pd.DataFrame({
         "항목": ["예보기온(T3H)", "풍속(WSD)", "습도(REH)", "최고기온(TMX)", "최저기온(TMN)", "체감온도"],
         "값": [temp, wind, hum, max_temp, min_temp, feel]
@@ -164,12 +161,10 @@ def get_weather_from_api(region_name):
         "max_feel": feel
     }
 
-# 불러오기 실행
 if use_api:
     weather_data = get_weather_from_api(region) or {}
 
-# 수동 입력 or 자동 입력
-st.markdown("#### 🧾 예측 입력값 설정")
+# 입력 UI 구성
 col1, col2 = st.columns(2)
 with col1:
     max_feel = weather_data.get("max_feel") or st.number_input("최고체감온도(°C)", 0.0, 60.0, 33.0)
