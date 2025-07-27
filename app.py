@@ -51,7 +51,6 @@ def convert_latlon_to_xy(lat, lon):
 
     return int(x), int(y)
 
-# 시도명 → 위도/경도 매핑
 region_to_latlon = {
     "서울특별시": (37.5665, 126.9780),
     "부산광역시": (35.1796, 129.0756),
@@ -75,7 +74,6 @@ region_to_latlon = {
 def calculate_feels_like(temp, wind_speed):
     return round(13.12 + 0.6215*temp - 11.37*(wind_speed**0.16) + 0.3965*temp*(wind_speed**0.16), 1)
 
-# base_time 계산 함수 (T3H 포함 시간 기준)
 def get_base_time(now):
     valid_times = [2, 5, 8, 11, 14, 17, 20, 23]
     hour = now.hour
@@ -84,10 +82,8 @@ def get_base_time(now):
             return f"{t:02d}00", now.strftime("%Y%m%d")
     return "2300", (now - datetime.timedelta(days=1)).strftime("%Y%m%d")
 
-# Streamlit UI 시작
 st.title("🔥 온열질환 예측 대시보드")
 
-# 날짜 및 지역 선택 (한 줄)
 st.markdown("#### 📅 날짜 및 📍지역 선택")
 col1, col2 = st.columns(2)
 with col1:
@@ -95,12 +91,10 @@ with col1:
 with col2:
     region = st.selectbox("광역자치단체", list(region_to_latlon.keys()))
 
-# 기상청 API 호출 여부
 st.markdown("#### ☁️ 기상 정보 자동 불러오기")
 use_api = st.checkbox("기상청 단기예보 API 사용")
 weather_data = {}
 
-# 기상 데이터 불러오기 함수
 def get_weather_from_api(region_name):
     lat, lon = region_to_latlon.get(region_name, (37.5665, 126.9780))
     nx, ny = convert_latlon_to_xy(lat, lon)
@@ -133,23 +127,32 @@ def get_weather_from_api(region_name):
     latest = df[df["category"].isin(["TMX", "TMN", "REH", "WSD", "T3H"])]
     closest = latest.loc[latest.groupby("category")["hour_diff"].idxmin()]
 
-    closest = closest.set_index("category")
-    if "T3H" not in closest.index:
+    available = closest["category"].values
+    if "T3H" not in available:
         st.warning("T3H 항목 누락 - 평균기온은 사용자 입력으로 진행됩니다.")
-        temp = None
-    else:
-        temp = float(closest.loc["T3H"]["fcstValue"])
-
+    
+    closest = closest.set_index("category")
+    temp = float(closest.loc["T3H"]["fcstValue"]) if "T3H" in closest.index else None
     wind = float(closest.loc["WSD"]["fcstValue"])
     max_temp = float(closest.loc["TMX"]["fcstValue"])
     min_temp = float(closest.loc["TMN"]["fcstValue"])
     hum = float(closest.loc["REH"]["fcstValue"])
-    feel = calculate_feels_like(temp if temp is not None else max_temp, wind)
+    feel = calculate_feels_like(temp if temp is not None else 28.0, wind)
+
+    return {
+        "max_temp": max_temp,
+        "min_temp": min_temp,
+        "humidity": hum,
+        "wind": wind,
+        "avg_temp": temp,
+        "max_feel": feel
+    }
+
+if use_api:
+    weather_data = get_weather_from_api(region) or {}
 
 st.markdown("#### ☁️ 기상 정보 조정하기 (사용자 입력 가능)")
-
 col1, col2 = st.columns(2)
-
 with col1:
     max_temp = st.number_input("🌡️ 최고기온 (TMX)", min_value=0.0, max_value=60.0, value=weather_data.get("max_temp", 35.0))
     min_temp = st.number_input("🌡️ 최저기온 (TMN)", min_value=0.0, max_value=40.0, value=weather_data.get("min_temp", 26.0))
@@ -157,41 +160,14 @@ with col1:
 
 with col2:
     wind = st.number_input("🌬️ 풍속 (WSD)", min_value=0.0, max_value=20.0, value=weather_data.get("wind", 1.5))
-    avg_temp = st.number_input("🌡️ 평균기온 (T3H)", min_value=0.0, max_value=50.0, value=weather_data.get("avg_temp", 28.0))
+    avg_temp = st.number_input("🌡️ 평균기온 (T3H)", min_value=0.0, max_value=50.0, value=weather_data.get("avg_temp", 28.0) or 28.0)
     feel = calculate_feels_like(avg_temp, wind)
     st.metric("🧊 체감온도", f"{feel} °C")
 
-
-    return {
-        "max_temp": max_temp,
-        "humidity": hum,
-        "min_temp": min_temp,
-        "avg_temp": temp,  # None일 수 있음
-        "max_feel": feel
-    }
-
-# 불러오기 실행
-if use_api:
-    weather_data = get_weather_from_api(region) or {}
-
-# 수동 입력 or 자동 입력
-st.markdown("#### 🧾 예측 입력값 설정")
-col1, col2 = st.columns(2)
-with col1:
-    max_feel = weather_data.get("max_feel") or st.number_input("최고체감온도(°C)", 0.0, 60.0, 33.0)
-    max_temp = weather_data.get("max_temp") or st.number_input("최고기온(°C)", 0.0, 60.0, 32.0)
-    avg_temp = weather_data.get("avg_temp")
-    if avg_temp is None:
-        avg_temp = st.number_input("평균기온(°C)", 0.0, 50.0, 28.5)
-with col2:
-    min_temp = weather_data.get("min_temp") or st.number_input("최저기온(°C)", 0.0, 40.0, 25.0)
-    humidity = weather_data.get("humidity") or st.number_input("평균상대습도(%)", 0.0, 100.0, 70.0)
-
-# 예측 실행 버튼
 if st.button("📊 예측하기"):
     input_df = pd.DataFrame([{ 
         "광역자치단체": region,
-        "최고체감온도(°C)": max_feel,
+        "최고체감온도(°C)": feel,
         "최고기온(°C)": max_temp,
         "평균기온(°C)": avg_temp,
         "최저기온(°C)": min_temp,
@@ -208,5 +184,5 @@ if st.button("📊 예측하기"):
 
     risk = get_risk_level(pred)
     st.markdown("## ✅ 예측 결과")
-    st.write(f"예측 환자 수: **{pred}명**")
+    st.write(f"예측 환자 수: **{pred:.2f}명**")
     st.write(f"위험 등급: **{risk}**")
