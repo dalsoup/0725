@@ -9,8 +9,7 @@ import math
 model = joblib.load("trained_model.pkl")
 
 # secrets에서 기상청 API 키 불러오기
-import requests.utils
-KMA_API_KEY = requests.utils.unquote(st.secrets["KMA"]["API_KEY"])
+KMA_API_KEY = st.secrets["KMA"]["API_KEY"]
 
 # 위경도 → 기상청 격자 좌표 변환 함수
 def convert_latlon_to_xy(lat, lon):
@@ -81,7 +80,7 @@ def get_weather_from_api(region_name):
 
     url = "https://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getUltraSrtNcst"
     params = {
-        "serviceKey": requests.utils.unquote(KMA_API_KEY),  # 디코딩 적용
+        "serviceKey": KMA_API_KEY,  # 디코딩 적용
         "numOfRows": "10",
         "dataType": "JSON",
         "base_date": base_date,
