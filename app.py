@@ -91,8 +91,6 @@ with col1:
 with col2:
     region = st.selectbox("광역자치단체", list(region_to_latlon.keys()))
 
-st.markdown("#### ☁️ 기상 정보 자동 불러오기")
-use_api = st.checkbox("기상청 단기예보 API 사용")
 weather_data = {}
 
 def get_weather_from_api(region_name):
@@ -148,23 +146,26 @@ def get_weather_from_api(region_name):
         "max_feel": feel
     }
 
-if use_api:
-    weather_data = get_weather_from_api(region) or {}
+with st.container():
+    st.markdown("#### ☁️ 기상 정보 입력 및 예측")
+    use_api = st.checkbox("기상청 단기예보 API 사용")
 
-st.markdown("#### 📊 기상 정보 입력 및 예측")
-st.write("필요시 직접 수정 후 예측 버튼을 눌러주세요.")
+    if use_api:
+        weather_data = get_weather_from_api(region) or {}
 
-with st.form("input_form"):
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        max_temp = st.number_input("최고기온(°C)", value=weather_data.get("max_temp", 32.0))
-        max_feel = st.number_input("최고체감온도(°C)", value=weather_data.get("max_feel", 33.0))
-    with col2:
-        min_temp = st.number_input("최저기온(°C)", value=weather_data.get("min_temp", 25.0))
-        humidity = st.number_input("평균상대습도(%)", value=weather_data.get("humidity", 70.0))
-    with col3:
-        avg_temp = st.number_input("평균기온(°C)", value=weather_data.get("avg_temp", 28.5) or 28.5)
-    submitted = st.form_submit_button("📊 예측하기")
+    with st.form("input_form"):
+        st.write("필요시 직접 수정 후 예측 버튼을 눌러주세요.")
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            max_temp = st.number_input("최고기온(°C)", value=weather_data.get("max_temp", 32.0))
+            max_feel = st.number_input("최고체감온도(°C)", value=weather_data.get("max_feel", 33.0))
+        with col2:
+            min_temp = st.number_input("최저기온(°C)", value=weather_data.get("min_temp", 25.0))
+            humidity = st.number_input("평균상대습도(%)", value=weather_data.get("humidity", 70.0))
+        with col3:
+            avg_temp = st.number_input("평균기온(°C)", value=weather_data.get("avg_temp", 28.5) or 28.5)
+
+        submitted = st.form_submit_button("📊 예측하기")
 
 if 'submitted' in locals() and submitted:
     input_df = pd.DataFrame([{ 
