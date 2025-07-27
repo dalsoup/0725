@@ -153,7 +153,7 @@ def get_weather_from_api(region_name):
     }
 
 with st.container():
-    st.markdown("#### ☁️ 기상 정보 입력 및 예측")
+    st.markdown("#### 기상 정보")
     with st.form("input_form"):
         use_api = st.checkbox("기상청 단기예보 API 사용", key="api_checkbox")
         if use_api:
