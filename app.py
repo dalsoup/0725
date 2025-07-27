@@ -103,6 +103,10 @@ def get_weather_from_api(region_name):
     items = response.json().get("response", {}).get("body", {}).get("items", {}).get("item", [])
     df = pd.DataFrame(items)
 
+    if "fcstDate" not in df.columns:
+        st.error("API 응답에 'fcstDate' 필드가 없습니다.")
+        return None
+
     df = df[df["fcstDate"] == base_date]
     df["fcstHour"] = df["fcstTime"].astype(int) // 100
     now_hour = now.hour
@@ -119,9 +123,12 @@ def get_weather_from_api(region_name):
     hum = float(closest.loc["REH"]["fcstValue"]) if "REH" in closest.index else 70.0
     feel = calculate_feels_like(temp, wind)
 
-    forecast_time = closest.iloc[0]["fcstDate"] + " " + closest.iloc[0]["fcstTime"][:2] + ":00"
-    st.markdown(f"#### 🌡️ 불러온 예보 기상 정보  ")
-    st.caption(f"예보 시각 기준: {forecast_time} (가장 근접한 시각의 데이터)")
+    fcst_date = closest.iloc[0]["fcstDate"]
+    fcst_time = closest.iloc[0]["fcstTime"]
+    formatted_time = f"{fcst_date[:4]}-{fcst_date[4:6]}-{fcst_date[6:]} {fcst_time[:2]}:00"
+
+    st.markdown(f"#### 🌡️ 불러온 예보 기상 정보")
+    st.caption(f"예보 시각 기준: {formatted_time} (가장 근접한 시각의 데이터)")
 
     display_df = pd.DataFrame({
         "항목": ["예보기온(T3H)", "풍속(WSD)", "습도(REH)", "최고기온(TMX)", "최저기온(TMN)", "체감온도"],
