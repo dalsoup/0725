@@ -4,12 +4,12 @@ import joblib
 import datetime
 import requests
 import math
+from urllib.parse import unquote
 
 # 모델 불러오기
 model = joblib.load("trained_model.pkl")
 
 # secrets에서 기상청 API 키 불러오기
-from urllib.parse import unquote
 KMA_API_KEY = unquote(st.secrets["KMA"]["API_KEY"])
 
 # 위경도 → 기상청 격자 좌표 변환 함수
@@ -72,17 +72,22 @@ region_to_latlon = {
     "제주특별자치도": (33.4996, 126.5312)
 }
 
-# 기상청 API 호출 함수
+def calculate_feels_like(temp, wind_speed):
+    return round(13.12 + 0.6215*temp - 11.37*(wind_speed**0.16) + 0.3965*temp*(wind_speed**0.16), 1)
+
+# 기상청 단기예보 API 호출 함수
 def get_weather_from_api(region_name):
     lat, lon = region_to_latlon.get(region_name, (37.5665, 126.9780))
     nx, ny = convert_latlon_to_xy(lat, lon)
-    base_date = datetime.datetime.now().strftime("%Y%m%d")
-    base_time = "0600"
+    now = datetime.datetime.now()
+    base_date = now.strftime("%Y%m%d")
+    base_time = "0500"  # 예보 기준 시간 (정각 + 1시간 뒤에 제공됨)
 
-    url = "http://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getUltraSrtNcst"
+    url = "http://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getVilageFcst"
     params = {
-        "serviceKey": KMA_API_KEY,  # 디코딩 적용
-        "numOfRows": "10",
+        "serviceKey": KMA_API_KEY,
+        "numOfRows": "100",
+        "pageNo": "1",
         "dataType": "JSON",
         "base_date": base_date,
         "base_time": base_time,
@@ -95,18 +100,36 @@ def get_weather_from_api(region_name):
         st.error("기상청 API 호출 실패")
         return None
 
-    data = response.json().get("response", {}).get("body", {}).get("items", {}).get("item", [])
-    result = {item["category"]: float(item["obsrValue"]) for item in data}
+    items = response.json().get("response", {}).get("body", {}).get("items", {}).get("item", [])
+    df = pd.DataFrame(items)
 
-    st.markdown("#### 🌡️ 불러온 실시간 기상 정보")
-    st.table(pd.DataFrame(result.items(), columns=["항목", "값"]))
+    # 오늘 날짜 기준만 필터링
+    df = df[df["fcstDate"] == base_date]
+
+    # 원하는 항목만 추출
+    filtered = df[df["category"].isin(["TMX", "TMN", "REH", "WSD", "T3H"])]
+    latest = filtered.groupby("category").first()
+
+    temp = float(latest.loc["T3H"]["fcstValue"]) if "T3H" in latest.index else 30.0
+    wind = float(latest.loc["WSD"]["fcstValue"]) if "WSD" in latest.index else 2.0
+    max_temp = float(latest.loc["TMX"]["fcstValue"]) if "TMX" in latest.index else 33.0
+    min_temp = float(latest.loc["TMN"]["fcstValue"]) if "TMN" in latest.index else 25.0
+    hum = float(latest.loc["REH"]["fcstValue"]) if "REH" in latest.index else 70.0
+    feel = calculate_feels_like(temp, wind)
+
+    st.markdown("#### 🌡️ 불러온 예보 기상 정보")
+    display_df = pd.DataFrame({
+        "항목": ["예보기온(T3H)", "풍속(WSD)", "습도(REH)", "최고기온(TMX)", "최저기온(TMN)", "체감온도"],
+        "값": [temp, wind, hum, max_temp, min_temp, feel]
+    })
+    st.table(display_df)
 
     return {
-        "max_temp": result.get("T1H", 32.0),
-        "humidity": result.get("REH", 70.0),
-        "min_temp": 25.0,
-        "avg_temp": result.get("T1H", 32.0),
-        "max_feel": result.get("T1H", 32.0) + 1.5
+        "max_temp": max_temp,
+        "humidity": hum,
+        "min_temp": min_temp,
+        "avg_temp": temp,
+        "max_feel": feel
     }
 
 # 리스크 판단 함수
