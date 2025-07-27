@@ -9,7 +9,8 @@ import math
 model = joblib.load("trained_model.pkl")
 
 # secrets에서 기상청 API 키 불러오기
-KMA_API_KEY = st.secrets["KMA"]["API_KEY"]
+from urllib.parse import unquote
+KMA_API_KEY = unquote(st.secrets["KMA"]["API_KEY"])
 
 # 위경도 → 기상청 격자 좌표 변환 함수
 def convert_latlon_to_xy(lat, lon):
