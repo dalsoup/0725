@@ -128,8 +128,13 @@ if use_api:
         now_hour = now.hour
         df["hour_diff"] = abs(df["fcstHour"] - now_hour)
         latest = df[df["category"].isin(["TMX", "TMN", "REH", "WSD", "T3H"])]
-        closest = latest.loc[latest.groupby("category")["hour_diff"].idxmin()].set_index("category")
+        closest = latest.loc[latest.groupby("category")["hour_diff"].idxmin()]
 
+        if "T3H" not in closest["category"].values:
+            st.error("T3H 항목 누락 - 기상청 API 응답 불완전")
+            return None
+
+        closest = closest.set_index("category")
         temp = float(closest.loc["T3H"]["fcstValue"])
         wind = float(closest.loc["WSD"]["fcstValue"])
         max_temp = float(closest.loc["TMX"]["fcstValue"])
