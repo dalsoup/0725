@@ -130,7 +130,7 @@ def get_weather_from_api(region_name):
     available = closest["category"].values
     if "T3H" not in available:
         st.warning("T3H 항목 누락 - 평균기온은 사용자 입력으로 진행됩니다.")
-    
+
     closest = closest.set_index("category")
     temp = float(closest.loc["T3H"]["fcstValue"]) if "T3H" in closest.index else None
     wind = float(closest.loc["WSD"]["fcstValue"])
@@ -151,23 +151,25 @@ def get_weather_from_api(region_name):
 if use_api:
     weather_data = get_weather_from_api(region) or {}
 
-st.markdown("#### ☁️ 기상 정보 조정하기 (사용자 입력 가능)")
-col1, col2 = st.columns(2)
-with col1:
-    max_temp = st.number_input("🌡️ 최고기온 (TMX)", min_value=0.0, max_value=60.0, value=weather_data.get("max_temp", 35.0))
-    min_temp = st.number_input("🌡️ 최저기온 (TMN)", min_value=0.0, max_value=40.0, value=weather_data.get("min_temp", 26.0))
-    humidity = st.number_input("💧 평균상대습도 (%)", min_value=0.0, max_value=100.0, value=weather_data.get("humidity", 70.0))
+st.markdown("#### 📊 기상 정보 입력 및 예측")
+st.write("필요시 직접 수정 후 예측 버튼을 눌러주세요.")
 
-with col2:
-    wind = st.number_input("🌬️ 풍속 (WSD)", min_value=0.0, max_value=20.0, value=weather_data.get("wind", 1.5))
-    avg_temp = st.number_input("🌡️ 평균기온 (T3H)", min_value=0.0, max_value=50.0, value=weather_data.get("avg_temp", 28.0) or 28.0)
-    feel = calculate_feels_like(avg_temp, wind)
-    st.metric("🧊 체감온도", f"{feel} °C")
+with st.form("input_form"):
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        max_temp = st.number_input("최고기온(°C)", value=weather_data.get("max_temp", 32.0))
+        max_feel = st.number_input("최고체감온도(°C)", value=weather_data.get("max_feel", 33.0))
+    with col2:
+        min_temp = st.number_input("최저기온(°C)", value=weather_data.get("min_temp", 25.0))
+        humidity = st.number_input("평균상대습도(%)", value=weather_data.get("humidity", 70.0))
+    with col3:
+        avg_temp = st.number_input("평균기온(°C)", value=weather_data.get("avg_temp", 28.5) or 28.5)
+    submitted = st.form_submit_button("📊 예측하기")
 
-if st.button("📊 예측하기"):
+if 'submitted' in locals() and submitted:
     input_df = pd.DataFrame([{ 
         "광역자치단체": region,
-        "최고체감온도(°C)": feel,
+        "최고체감온도(°C)": max_feel,
         "최고기온(°C)": max_temp,
         "평균기온(°C)": avg_temp,
         "최저기온(°C)": min_temp,
