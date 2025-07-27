@@ -146,10 +146,21 @@ def get_weather_from_api(region_name):
     hum = float(closest.loc["REH"]["fcstValue"])
     feel = calculate_feels_like(temp if temp is not None else max_temp, wind)
 
-    st.table(pd.DataFrame({
-        "항목": ["예보기온(T3H)", "풍속(WSD)", "습도(REH)", "최고기온(TMX)", "최저기온(TMN)", "체감온도"],
-        "값": [temp if temp is not None else "(직접입력)", wind, hum, max_temp, min_temp, feel]
-    }))
+st.markdown("#### ☁️ 기상 정보 조정하기 (사용자 입력 가능)")
+
+col1, col2 = st.columns(2)
+
+with col1:
+    max_temp = st.number_input("🌡️ 최고기온 (TMX)", min_value=0.0, max_value=60.0, value=weather_data.get("max_temp", 35.0))
+    min_temp = st.number_input("🌡️ 최저기온 (TMN)", min_value=0.0, max_value=40.0, value=weather_data.get("min_temp", 26.0))
+    humidity = st.number_input("💧 평균상대습도 (%)", min_value=0.0, max_value=100.0, value=weather_data.get("humidity", 70.0))
+
+with col2:
+    wind = st.number_input("🌬️ 풍속 (WSD)", min_value=0.0, max_value=20.0, value=weather_data.get("wind", 1.5))
+    avg_temp = st.number_input("🌡️ 평균기온 (T3H)", min_value=0.0, max_value=50.0, value=weather_data.get("avg_temp", 28.0))
+    feel = calculate_feels_like(avg_temp, wind)
+    st.metric("🧊 체감온도", f"{feel} °C")
+
 
     return {
         "max_temp": max_temp,
