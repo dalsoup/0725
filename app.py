@@ -9,7 +9,8 @@ import math
 model = joblib.load("trained_model.pkl")
 
 # secrets에서 기상청 API 키 불러오기
-KMA_API_KEY = st.secrets["KMA"]["API_KEY"]
+import requests.utils
+KMA_API_KEY = requests.utils.unquote(st.secrets["KMA"]["API_KEY"])
 
 # 위경도 → 기상청 격자 좌표 변환 함수
 def convert_latlon_to_xy(lat, lon):
@@ -89,7 +90,7 @@ def get_weather_from_api(region_name):
         "ny": ny
     }
 
-    response = requests.get(url, params=params)
+    response = requests.get(url, params=params, timeout=10, verify=False)
     if response.status_code != 200:
         st.error("기상청 API 호출 실패")
         return None
@@ -104,7 +105,6 @@ def get_weather_from_api(region_name):
         "avg_temp": result.get("T1H", 32.0),
         "max_feel": result.get("T1H", 32.0) + 1.5
     }
-
 
 # 리스크 판단 함수
 def get_risk_level(pred):
