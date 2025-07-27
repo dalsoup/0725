@@ -127,7 +127,7 @@ def get_weather_from_api(region_name):
 
     available = closest["category"].values
     if "T3H" not in available:
-        st.warning("T3H 항목 누락 - 평균기온은 사용자 입력으로 진행됩니다.")
+        st.warning("T3H 항목 누락 - 평균기온은 최고/최저기온 평균으로 자동 계산됩니다.")
 
     closest = closest.set_index("category")
     temp = float(closest.loc["T3H"]["fcstValue"]) if "T3H" in closest.index else None
@@ -135,7 +135,11 @@ def get_weather_from_api(region_name):
     max_temp = float(closest.loc["TMX"]["fcstValue"])
     min_temp = float(closest.loc["TMN"]["fcstValue"])
     hum = float(closest.loc["REH"]["fcstValue"])
-    feel = calculate_feels_like(temp if temp is not None else 28.0, wind)
+
+    if temp is None:
+        temp = round((max_temp + min_temp) / 2, 1)
+
+    feel = calculate_feels_like(temp, wind)
 
     return {
         "max_temp": max_temp,
@@ -163,7 +167,7 @@ with st.container():
             min_temp = st.number_input("최저기온(°C)", value=weather_data.get("min_temp", 25.0))
             humidity = st.number_input("평균상대습도(%)", value=weather_data.get("humidity", 70.0))
         with col3:
-            avg_temp = st.number_input("평균기온(°C)", value=weather_data.get("avg_temp", 28.5) or 28.5)
+            avg_temp = st.number_input("평균기온(°C)", value=weather_data.get("avg_temp", 28.5))
 
         submitted = st.form_submit_button("📊 예측하기")
 
