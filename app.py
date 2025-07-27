@@ -82,9 +82,8 @@ def get_base_time(now):
             return f"{t:02d}00", now.strftime("%Y%m%d")
     return "2300", (now - datetime.timedelta(days=1)).strftime("%Y%m%d")
 
-st.title("🔥 온열질환 예측 대시보드")
+st.title("온열질환 예측 대시보드")
 
-st.markdown("#### 날짜 및 지역 선택")
 col1, col2 = st.columns(2)
 with col1:
     date_selected = st.date_input(
