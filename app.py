@@ -84,6 +84,14 @@ def get_base_time(now):
         if hour >= t:
             return f"{t:02d}00", now.strftime("%Y%m%d")
 
+# 🔽 날짜 선택 + 지역 선택 한 줄로 UI 구성
+with st.container():
+    col1, col2 = st.columns([1, 1])
+    with col1:
+        date_selected = st.date_input("날짜", datetime.date.today())
+    with col2:
+        region = st.selectbox("지역", list(region_to_latlon.keys()))
+
 # 기상청 단기예보 API 호출 함수
 def get_weather_from_api(region_name):
     lat, lon = region_to_latlon.get(region_name, (37.5665, 126.9780))
@@ -135,7 +143,7 @@ def get_weather_from_api(region_name):
     fcst_time = fcst_time_row.get("fcstTime", base_time)
     formatted_time = f"{fcst_date[:4]}-{fcst_date[4:6]}-{fcst_date[6:]} {fcst_time[:2]}:00"
 
-    st.markdown(f"#### 🌡️ 불러온 예보 기상 정보")
+    st.markdown("#### 🌡️ 불러온 예보 기상 정보")
     st.caption(f"예보 시각 기준: {formatted_time} (가장 근접한 시각의 데이터)")
 
     display_df = pd.DataFrame({
