@@ -84,59 +84,115 @@ def get_base_time(now):
 
 st.subheader("온열질환 예측 대시보드")
 
-# 날짜 및 지역 선택
 col1, col2 = st.columns(2)
 with col1:
     date_selected = st.date_input(
-        "날짜",
-        datetime.date.today(),
-        min_value=datetime.date.today(),
-        max_value=datetime.date.today() + datetime.timedelta(days=5)
-    )
+    "날짜",
+    datetime.date.today(),
+    min_value=datetime.date.today(),
+    max_value=datetime.date.today() + datetime.timedelta(days=5)
+)
 with col2:
     region = st.selectbox("광역자치단체", list(region_to_latlon.keys()))
 
-# 날짜와 지역이 선택되면 기상 정보 버튼 노출
-if date_selected and region:
-    if st.button("☁️ 기상정보 확인하기"):
-        # API 호출 또는 빈 값
+def get_weather_from_api(region_name):
+    lat, lon = region_to_latlon.get(region_name, (37.5665, 126.9780))
+    nx, ny = convert_latlon_to_xy(lat, lon)
+    now = datetime.datetime.now()
+    base_time, base_date = get_base_time(now)
+
+    url = "http://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getVilageFcst"
+    params = {
+        "serviceKey": KMA_API_KEY,
+        "numOfRows": "300",
+        "pageNo": "1",
+        "dataType": "JSON",
+        "base_date": base_date,
+        "base_time": base_time,
+        "nx": nx,
+        "ny": ny
+    }
+
+    response = requests.get(url, params=params, timeout=10, verify=False)
+    items = response.json().get("response", {}).get("body", {}).get("items", {}).get("item", [])
+    df = pd.DataFrame(items)
+
+    if df.empty or "category" not in df.columns or "fcstValue" not in df.columns:
+        st.error("예보 데이터를 찾을 수 없습니다.")
+        return None
+
+    df["fcstHour"] = df["fcstTime"].astype(int) // 100
+    now_hour = now.hour
+    df["hour_diff"] = abs(df["fcstHour"] - now_hour)
+    latest = df[df["category"].isin(["TMX", "TMN", "REH", "WSD", "T3H"])]
+    closest = latest.loc[latest.groupby("category")["hour_diff"].idxmin()]
+
+    available = closest["category"].values
+    if "T3H" not in available:
+        st.warning("T3H 항목 누락 - 평균기온은 최고/최저기온 평균으로 자동 계산됩니다.")
+
+    closest = closest.set_index("category")
+    temp = float(closest.loc["T3H"]["fcstValue"]) if "T3H" in closest.index else None
+    wind = float(closest.loc["WSD"]["fcstValue"])
+    max_temp = float(closest.loc["TMX"]["fcstValue"])
+    min_temp = float(closest.loc["TMN"]["fcstValue"])
+    hum = float(closest.loc["REH"]["fcstValue"])
+
+    if temp is None:
+        temp = round((max_temp + min_temp) / 2, 1)
+
+    feel = calculate_feels_like(temp, wind)
+
+    return {
+        "max_temp": max_temp,
+        "min_temp": min_temp,
+        "humidity": hum,
+        "wind": wind,
+        "avg_temp": temp,
+        "max_feel": feel
+    }
+
+with st.container():
+    st.markdown("**기상 정보**")
+    with st.form("input_form"):
         use_api = st.checkbox("기상청 단기예보 API 사용", key="api_checkbox")
-        weather_data = get_weather_from_api(region) if use_api else {}
+        if use_api:
+            weather_data = get_weather_from_api(region) or {}
+        else:
+            weather_data = {}
 
-        st.markdown("**기상 정보 확인 및 수정**")
-        with st.form("weather_form"):
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                max_temp = st.number_input("최고기온(°C)", value=weather_data.get("max_temp", 32.0))
-                max_feel = st.number_input("최고체감온도(°C)", value=weather_data.get("max_feel", 33.0))
-            with col2:
-                min_temp = st.number_input("최저기온(°C)", value=weather_data.get("min_temp", 25.0))
-                humidity = st.number_input("평균상대습도(%)", value=weather_data.get("humidity", 70.0))
-            with col3:
-                avg_temp = st.number_input("평균기온(°C)", value=weather_data.get("avg_temp", 28.5))
+        st.write("필요시 직접 수정 후 예측 버튼을 누르세요.")
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            max_temp = st.number_input("최고기온(°C)", value=weather_data.get("max_temp", 32.0))
+            max_feel = st.number_input("최고체감온도(°C)", value=weather_data.get("max_feel", 33.0))
+        with col2:
+            min_temp = st.number_input("최저기온(°C)", value=weather_data.get("min_temp", 25.0))
+            humidity = st.number_input("평균상대습도(%)", value=weather_data.get("humidity", 70.0))
+        with col3:
+            avg_temp = st.number_input("평균기온(°C)", value=weather_data.get("avg_temp", 28.5))
 
-            predict_button = st.form_submit_button("📊 온열질환 예측하기")
+        submitted = st.form_submit_button("📊 예측하기")
 
-        if predict_button:
-            input_df = pd.DataFrame([{ 
-                "광역자치단체": region,
-                "최고체감온도(°C)": max_feel,
-                "최고기온(°C)": max_temp,
-                "평균기온(°C)": avg_temp,
-                "최저기온(°C)": min_temp,
-                "평균상대습도(%)": humidity
-            }])
-            pred = model.predict(input_df.drop(columns=["광역자치단체"]))[0]
+if 'submitted' in locals() and submitted:
+    input_df = pd.DataFrame([{ 
+        "광역자치단체": region,
+        "최고체감온도(°C)": max_feel,
+        "최고기온(°C)": max_temp,
+        "평균기온(°C)": avg_temp,
+        "최저기온(°C)": min_temp,
+        "평균상대습도(%)": humidity
+    }])
+    pred = model.predict(input_df.drop(columns=["광역자치단체"]))[0]
 
-            def get_risk_level(pred):
-                if pred == 0: return "🟢 매우 낮음"
-                elif pred <= 2: return "🟡 낮음"
-                elif pred <= 5: return "🟠 보통"
-                elif pred <= 10: return "🔴 높음"
-                else: return "🔥 매우 높음"
+    def get_risk_level(pred):
+        if pred == 0: return "🟢 매우 낮음"
+        elif pred <= 2: return "🟡 낮음"
+        elif pred <= 5: return "🟠 보통"
+        elif pred <= 10: return "🔴 높음"
+        else: return "🔥 매우 높음"
 
-            risk = get_risk_level(pred)
-            st.markdown("## ✅ 예측 결과")
-            st.write(f"예측 환자 수: **{pred:.2f}명**")
-            st.write(f"위험 등급: **{risk}**")
-
+    risk = get_risk_level(pred)
+    st.markdown("## ✅ 예측 결과")
+    st.write(f"예측 환자 수: **{pred:.2f}명**")
+    st.write(f"위험 등급: **{risk}**")
