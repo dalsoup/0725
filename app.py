@@ -79,7 +79,7 @@ def get_weather_from_api(region_name):
     base_date = datetime.datetime.now().strftime("%Y%m%d")
     base_time = "0600"
 
-    url = "https://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getUltraSrtNcst"
+    url = "http://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getUltraSrtNcst"
     params = {
         "serviceKey": KMA_API_KEY,  # 디코딩 적용
         "numOfRows": "10",
