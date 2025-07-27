@@ -87,7 +87,12 @@ st.title("🔥 온열질환 예측 대시보드")
 st.markdown("#### 📅 날짜 및 📍지역 선택")
 col1, col2 = st.columns(2)
 with col1:
-    date_selected = st.date_input("예측 날짜", datetime.date.today())
+    date_selected = st.date_input(
+    "예측 날짜",
+    datetime.date.today(),
+    min_value=datetime.date.today(),
+    max_value=datetime.date.today() + datetime.timedelta(days=5)
+)
 with col2:
     region = st.selectbox("광역자치단체", list(region_to_latlon.keys()))
 
