@@ -36,8 +36,8 @@ def convert_latlon_to_xy(lat, lon):
     ra = math.tan(math.pi*0.25 + lat*DEGRAD*0.5)
     ra = re * sf / math.pow(ra, sn)
     theta = lon * DEGRAD - olon
-    theta = theta - 2.0 * math.pi if theta > math.pi else theta
-    theta = theta + 2.0 * math.pi if theta < -math.pi else theta
+    if theta > math.pi: theta -= 2.0 * math.pi
+    if theta < -math.pi: theta += 2.0 * math.pi
     theta *= sn
     x = ra * math.sin(theta) + XO + 0.5
     y = ro - ra * math.cos(theta) + YO + 0.5
@@ -144,14 +144,25 @@ if use_auto:
         weather_data = get_future_weather_data(region, date_selected)
     st.write("✅ 불러온 weather_data:", weather_data)
 
-if st.button("📊 온열질환 예측하기"):
+col1, col2, col3 = st.columns(3)
+with col1:
+    max_temp = st.number_input("최고기온(°C)", value=weather_data.get("max_temp") if "max_temp" in weather_data else 0.0)
+    min_temp = st.number_input("최저기온(°C)", value=weather_data.get("min_temp") if "min_temp" in weather_data else 0.0)
+with col2:
+    avg_temp = st.number_input("평균기온(°C)", value=weather_data.get("avg_temp") if "avg_temp" in weather_data else 0.0)
+    humidity = st.number_input("평균상대습도(%)", value=weather_data.get("humidity") if "humidity" in weather_data else 0.0)
+with col3:
+    max_feel = st.number_input("최고체감온도(°C)", value=weather_data.get("max_feel") if "max_feel" in weather_data else 0.0)
+
+can_predict = all([max_temp, min_temp, avg_temp, humidity, max_feel])
+if can_predict and st.button("📊 온열질환 예측하기"):
     input_df = pd.DataFrame([{ 
         "광역자치단체": region,
-        "최고체감온도(°C)": weather_data.get("max_feel", 33.0),
-        "최고기온(°C)": weather_data.get("max_temp", 32.0),
-        "평균기온(°C)": weather_data.get("avg_temp", 28.5),
-        "최저기온(°C)": weather_data.get("min_temp", 25.0),
-        "평균상대습도(%)": weather_data.get("humidity", 70.0)
+        "최고체감온도(°C)": max_feel,
+        "최고기온(°C)": max_temp,
+        "평균기온(°C)": avg_temp,
+        "최저기온(°C)": min_temp,
+        "평균상대습도(%)": humidity
     }])
 
     st.write("🔍 예측에 사용된 입력값:", input_df)
@@ -167,3 +178,5 @@ if st.button("📊 온열질환 예측하기"):
 
     st.success(f"예측 환자 수: {pred:.2f}명")
     st.markdown(f"### 위험 등급: **{get_risk_level(pred)}**")
+else:
+    st.warning("⚠️ 모든 기상 정보를 입력하거나 자동 불러오기를 이용해주세요.")
