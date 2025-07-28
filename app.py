@@ -117,16 +117,26 @@ def get_weather_from_api(region_name, target_date):
         items = r.json().get("response", {}).get("body", {}).get("items", {}).get("item", [])
         df = pd.DataFrame(items)
         df = df[df["category"].isin(["TMX", "TMN", "REH", "WSD"])]
-        df = df[df["fcstDate"] == target_date.strftime("%Y%m%d")]
+
+        target_str = target_date.strftime("%Y%m%d")
+
+        if target_str in df["fcstDate"].values:
+            df = df[df["fcstDate"] == target_str]
+            used_date = target_str
+        else:
+            used_date = df["fcstDate"].value_counts().idxmax()
+            df = df[df["fcstDate"] == used_date]
 
         summary = {}
         for cat in ["TMX", "TMN", "REH", "WSD"]:
             values = df[df["category"] == cat]["fcstValue"].astype(float)
             if not values.empty:
                 summary[cat] = values.mean() if cat == "REH" else values.iloc[0]
-        return summary
+
+        return summary, used_date
     except:
-        return {}
+        return {}, None
+
 
 def calculate_avg_temp(tmx, tmn):
     if tmx is not None and tmn is not None:
@@ -157,10 +167,14 @@ with c3:
     predict_clicked = st.button("예측하기")
 
 if predict_clicked:
-    weather = get_weather_from_api(region, date_selected)
+    weather, used_date = get_weather_from_api(region, date_selected)
     if not weather or weather.get("TMX") is None or weather.get("TMN") is None:
         st.error("예보 데이터를 불러오지 못했습니다. 잠시 후 다시 시도해주세요.")
         st.stop()
+
+    # 예보 대체 안내
+    if used_date != date_selected.strftime("%Y%m%d"):
+        st.warning(f"⚠️ 선택하신 날짜의 예보가 부족하여 가장 가까운 날짜({used_date[:4]}-{used_date[4:6]}-{used_date[6:]}) 예보를 사용했습니다.")
 
     avg_temp = calculate_avg_temp(weather["TMX"], weather["TMN"])
 
