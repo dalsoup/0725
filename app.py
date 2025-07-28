@@ -129,7 +129,7 @@ def get_future_weather_data(region_name, target_date):
         return {}
 
 st.title("🔥 온열질환 예측 대시보드")
-date_selected = st.date_input("예측 날짜 선택", datetime.date.today())
+date_selected = st.date_input("날짜 선택", datetime.date.today())
 region = st.selectbox("광역자치단체 선택", list(region_to_latlon.keys()))
 use_auto = st.checkbox("기상 정보 자동 불러오기")
 
@@ -144,15 +144,9 @@ if use_auto:
         weather_data = get_future_weather_data(region, date_selected)
     st.write("✅ 불러온 weather_data:", weather_data)
 
-col1, col2, col3 = st.columns(3)
-with col1:
-    max_temp = st.number_input("최고기온(°C)", value=weather_data.get("max_temp", 32.0))
-    min_temp = st.number_input("최저기온(°C)", value=weather_data.get("min_temp", 25.0))
-with col2:
-    avg_temp = st.number_input("평균기온(°C)", value=weather_data.get("avg_temp", 28.5))
-    humidity = st.number_input("평균상대습도(%)", value=weather_data.get("humidity", 70.0))
-with col3:
-    max_feel = st.number_input("최고체감온도(°C)", value=weather_data.get("max_feel", 33.0))
+    st.write("🔍 예측에 사용된 입력값:", input_df)
+
+    pred = model.predict(input_df.drop(columns=["광역자치단체"]))[0]
 
 if st.button("📊 온열질환 예측하기"):
     input_df = pd.DataFrame([{ 
@@ -163,10 +157,6 @@ if st.button("📊 온열질환 예측하기"):
         "최저기온(°C)": min_temp,
         "평균상대습도(%)": humidity
     }])
-
-    st.write("🔍 예측에 사용된 입력값:", input_df)
-
-    pred = model.predict(input_df.drop(columns=["광역자치단체"]))[0]
 
     def get_risk_level(pred):
         if pred == 0: return "🟢 매우 낮음"
