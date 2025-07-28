@@ -146,7 +146,7 @@ def get_weather_combined(region_name):
 
     except Exception as e:
         print("기상청 API 오류:", e)
-        return None
+        return {}
 
 # UI 시작
 st.title("🔥 온열질환 예측 대시보드")
@@ -161,6 +161,8 @@ with col2:
 # 자동 불러오기
 use_auto = st.checkbox("기상청 API 자동 불러오기")
 weather_data = get_weather_combined(region) if use_auto else {}
+if not isinstance(weather_data, dict):
+    weather_data = {}
 
 st.caption("필요시 직접 수정 후 예측 버튼을 누르세요.")
 
