@@ -134,18 +134,51 @@ region_to_latlon = {
 st.markdown("### 👋 Hello, User")
 st.caption("폭염에 따른 온열질환 발생 예측 플랫폼")
 
-head1, head2 = st.columns([1,1])
-with head1:
+h1, h2, h3 = st.columns([2,2,1])
+with h1:
     region = st.selectbox("지역 선택", list(region_to_latlon.keys()), label_visibility="visible", key="region_select")
-with head2:
+with h2:
     today = datetime.date.today()
     date_selected = st.date_input("날짜 선택", value=today, min_value=today, max_value=today + datetime.timedelta(days=5))
+with h3:
+    predict_clicked = st.button("예측하기")
 
-if region and date_selected:
+if predict_clicked and region and date_selected:
     weather = get_weather_from_api(region)
     avg_temp = calculate_avg_temp(weather.get("TMX"), weather.get("TMN"))
+    st.markdown("#### ☁️ 오늘의 기상정보")
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("최고기온", f"{weather.get('TMX', 0):.1f}℃")
     col2.metric("최저기온", f"{weather.get('TMN', 0):.1f}℃")
     col3.metric("평균기온", f"{avg_temp:.1f}℃" if avg_temp is not None else "-℃")
     col4.metric("습도", f"{weather.get('REH', 0):.1f}%")
+
+    input_df = pd.DataFrame([{ 
+        "광역자치단체": region,
+        "최고체감온도(°C)": weather.get("TMX", 0) + 1.5,
+        "최고기온(°C)": weather.get("TMX", 0),
+        "평균기온(°C)": avg_temp or 0,
+        "최저기온(°C)": weather.get("TMN", 0),
+        "평균상대습도(%)": weather.get("REH", 0)
+    }])
+    pred = model.predict(input_df.drop(columns=["광역자치단체"]))[0]
+    risk = get_risk_level(pred)
+
+    st.markdown("#### 💡 온열질환자 예측")
+    st.metric("예측 온열질환자 수", f"{pred:.2f}명")
+    st.metric("위험 등급", risk)
+
+    diff = pred - 6.8
+    if diff >= 0:
+        st.caption(f"전년도 대비 +{diff:.1f}명")
+    else:
+        st.caption(f"전년도 대비 {diff:.1f}명")
+
+    if "🔥" in risk:
+        st.warning("🚨 매우 높음: 외출 자제 및 냉방기기 사용 권고")
+    elif "🔴" in risk:
+        st.info("🔴 높음: 노약자 야외활동 주의")
+    elif "🟠" in risk:
+        st.info("🟠 보통: 충분한 수분 섭취 필요")
+    else:
+        st.success("🟢 양호: 위험 낮음")
