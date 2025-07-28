@@ -34,7 +34,8 @@ div[data-testid="column"] > div {
     background-color: #1d4ed8;
 }
 .stNumberInput input,
-.stSelectbox div,
+.stSelectbox > div > div,
+.stSelectbox select,
 div.st-cj {
     background-color: #2c2f36 !important;
     color: #ffffff !important;
