@@ -155,7 +155,6 @@ region_to_latlon = {
 }
 
 # ----------- HEADER UI -----------
-st.markdown("### 👋 Hello, User")
 st.caption("폭염에 따른 온열질환 발생 예측 플랫폼")
 
 c1, c2, c3 = st.columns([2, 2, 1])
