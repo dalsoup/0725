@@ -29,6 +29,8 @@ div[data-testid="column"] > div {
     padding: 0.6rem 1.2rem;
     border-radius: 8px;
     border: none;
+    height: 45px !important;
+    margin-top: 32px;
 }
 .stButton > button:hover {
     background-color: #1d4ed8;
@@ -134,13 +136,13 @@ region_to_latlon = {
 st.markdown("### 👋 Hello, User")
 st.caption("폭염에 따른 온열질환 발생 예측 플랫폼")
 
-h1, h2, h3 = st.columns([2,2,1])
-with h1:
+c1, c2, c3 = st.columns([2, 2, 1])
+with c1:
     region = st.selectbox("지역 선택", list(region_to_latlon.keys()), label_visibility="visible", key="region_select")
-with h2:
+with c2:
     today = datetime.date.today()
     date_selected = st.date_input("날짜 선택", value=today, min_value=today, max_value=today + datetime.timedelta(days=5))
-with h3:
+with c3:
     predict_clicked = st.button("예측하기")
 
 if predict_clicked and region and date_selected:
@@ -165,8 +167,9 @@ if predict_clicked and region and date_selected:
     risk = get_risk_level(pred)
 
     st.markdown("#### 💡 온열질환자 예측")
-    st.metric("예측 온열질환자 수", f"{pred:.2f}명")
-    st.metric("위험 등급", risk)
+    c1, c2 = st.columns(2)
+    c1.metric("예측 온열질환자 수", f"{pred:.2f}명")
+    c2.metric("위험 등급", risk)
 
     diff = pred - 6.8
     if diff >= 0:
@@ -180,5 +183,7 @@ if predict_clicked and region and date_selected:
         st.info("🔴 높음: 노약자 야외활동 주의")
     elif "🟠" in risk:
         st.info("🟠 보통: 충분한 수분 섭취 필요")
+    elif "🟡" in risk:
+        st.success("🟡 낮음: 무리한 야외활동 자제")
     else:
-        st.success("🟢 양호: 위험 낮음")
+        st.success("🟢 매우 낮음: 위험 없음")
