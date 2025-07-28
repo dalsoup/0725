@@ -100,8 +100,11 @@ def convert_latlon_to_xy(lat, lon):
 def get_weather_from_api(region_name, target_date):
     latlon = region_to_latlon.get(region_name, (37.5665, 126.9780))
     nx, ny = convert_latlon_to_xy(*latlon)
-    base_time = max([h for h in [2, 5, 8, 11, 14, 17, 20, 23] if datetime.datetime.now().hour >= h], default=23)
-    base_date = target_date.strftime("%Y%m%d")
+
+    # fix base_date to today (now), even if target is in future
+    now = datetime.datetime.now()
+    base_time = max([h for h in [2, 5, 8, 11, 14, 17, 20, 23] if now.hour >= h], default=23)
+    base_date = now.strftime("%Y%m%d") if now.hour >= base_time else (now - datetime.timedelta(days=1)).strftime("%Y%m%d")
 
     params = {
         "serviceKey": KMA_API_KEY, "numOfRows": "300", "pageNo": "1", "dataType": "JSON",
