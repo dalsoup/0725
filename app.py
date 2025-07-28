@@ -11,12 +11,13 @@ st.markdown("""
 <style>
 html, body, .stApp {
     background-color: #ffffff !important;
+    color: #111827 !important;
     font-family: 'Pretendard', 'Noto Sans KR', sans-serif;
 }
 div[data-testid="column"] > div {
     background-color: #f9fafb;
     border-radius: 12px;
-    padding: 24px 24px 16px 24px;
+    padding: 24px;
     margin-bottom: 16px;
     box-shadow: 0 2px 6px rgba(0,0,0,0.05);
 }
@@ -31,14 +32,18 @@ div[data-testid="column"] > div {
 .stButton > button:hover {
     background-color: #2563eb;
 }
-.stNumberInput input {
-    background-color: #ffffff;
+.stNumberInput input,
+.stSelectbox div,
+div.st-cj {
+    background-color: #ffffff !important;
+    color: #111827 !important;
+    border: 1px solid #e5e7eb !important;
     border-radius: 6px;
     padding: 0.4rem 0.6rem;
 }
-.stMetricLabel {
+.stMetricLabel, .stMetricValue {
+    color: #111827 !important;
     font-weight: 600;
-    color: #6b7280;
 }
 </style>
 """, unsafe_allow_html=True)
