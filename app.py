@@ -101,15 +101,17 @@ def get_weather_from_api(region_name, target_date):
     latlon = region_to_latlon.get(region_name, (37.5665, 126.9780))
     nx, ny = convert_latlon_to_xy(*latlon)
 
-    # fix base_date to today (now), even if target is in future
-    now = datetime.datetime.now()
-    base_time = max([h for h in [2, 5, 8, 11, 14, 17, 20, 23] if now.hour >= h], default=23)
-    base_date = now.strftime("%Y%m%d") if now.hour >= base_time else (now - datetime.timedelta(days=1)).strftime("%Y%m%d")
+    # ✅ base_date를 target_date의 하루 전으로 고정
+    base_date = (target_date - datetime.timedelta(days=1)).strftime("%Y%m%d")
+    base_time = "2300"
 
     params = {
-        "serviceKey": KMA_API_KEY, "numOfRows": "300", "pageNo": "1", "dataType": "JSON",
-        "base_date": base_date, "base_time": f"{base_time:02d}00", "nx": nx, "ny": ny
+        "serviceKey": KMA_API_KEY,
+        "numOfRows": "300", "pageNo": "1", "dataType": "JSON",
+        "base_date": base_date, "base_time": base_time,
+        "nx": nx, "ny": ny
     }
+
     try:
         r = requests.get("http://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getVilageFcst", params=params, timeout=10, verify=False)
         items = r.json().get("response", {}).get("body", {}).get("items", {}).get("item", [])
