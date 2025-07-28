@@ -6,7 +6,6 @@ import requests
 import math
 from urllib.parse import unquote
 
-# 모델 불러오기
 model = joblib.load("trained_model.pkl")
 KMA_API_KEY = unquote(st.secrets["KMA"]["API_KEY"])
 
@@ -129,7 +128,6 @@ def get_future_weather_data(region_name, target_date):
         print("🔴 내일 예측 데이터 오류:", e)
         return {}
 
-# 예측 UI 연결 예시
 st.title("🔥 온열질환 예측 대시보드")
 date_selected = st.date_input("예측 날짜 선택", datetime.date.today())
 region = st.selectbox("광역자치단체 선택", list(region_to_latlon.keys()))
@@ -144,8 +142,8 @@ if use_auto:
     else:
         st.caption("📡 초단기예보 + 단기예보 데이터로 입력값 구성 중...")
         weather_data = get_future_weather_data(region, date_selected)
+    st.write("✅ 불러온 weather_data:", weather_data)
 
-# UI 입력값 구성
 col1, col2, col3 = st.columns(3)
 with col1:
     max_temp = st.number_input("최고기온(°C)", value=weather_data.get("max_temp", 32.0))
@@ -165,6 +163,8 @@ if st.button("📊 온열질환 예측하기"):
         "최저기온(°C)": min_temp,
         "평균상대습도(%)": humidity
     }])
+
+    st.write("🔍 예측에 사용된 입력값:", input_df)
 
     pred = model.predict(input_df.drop(columns=["광역자치단체"]))[0]
 
