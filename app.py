@@ -74,13 +74,68 @@ region_to_latlon = {
 def calculate_feels_like(temp, wind_speed):
     return round(13.12 + 0.6215*temp - 11.37*(wind_speed**0.16) + 0.3965*temp*(wind_speed**0.16), 1)
 
+def get_weather_from_api(region_name):
+    lat, lon = region_to_latlon.get(region_name, (37.5665, 126.9780))
+    nx, ny = convert_latlon_to_xy(lat, lon)
+    now = datetime.datetime.now()
+    valid_times = [2, 5, 8, 11, 14, 17, 20, 23]
+    for t in reversed(valid_times):
+        if now.hour >= t:
+            base_time = f"{t:02d}00"
+            base_date = now.strftime("%Y%m%d")
+            break
+    else:
+        base_time = "2300"
+        base_date = (now - datetime.timedelta(days=1)).strftime("%Y%m%d")
+
+    url = "http://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getVilageFcst"
+    params = {
+        "serviceKey": KMA_API_KEY,
+        "numOfRows": "300",
+        "pageNo": "1",
+        "dataType": "JSON",
+        "base_date": base_date,
+        "base_time": base_time,
+        "nx": nx,
+        "ny": ny
+    }
+
+    try:
+        response = requests.get(url, params=params, timeout=10, verify=False)
+        data = response.json()
+        items = data.get("response", {}).get("body", {}).get("items", {}).get("item", [])
+        df = pd.DataFrame(items)
+        df["fcstHour"] = df["fcstTime"].astype(int) // 100
+        df["hour_diff"] = abs(df["fcstHour"] - now.hour)
+        df = df[df["category"].isin(["TMX", "TMN", "REH", "WSD", "T3H"])]
+        closest = df.loc[df.groupby("category")["hour_diff"].idxmin()].set_index("category")
+        temp = float(closest.loc["T3H"]["fcstValue"]) if "T3H" in closest.index else None
+        wind = float(closest.loc["WSD"]["fcstValue"]) if "WSD" in closest.index else None
+        max_temp = float(closest.loc["TMX"]["fcstValue"]) if "TMX" in closest.index else None
+        min_temp = float(closest.loc["TMN"]["fcstValue"]) if "TMN" in closest.index else None
+        hum = float(closest.loc["REH"]["fcstValue"]) if "REH" in closest.index else None
+        if temp is None and max_temp is not None and min_temp is not None:
+            temp = round((max_temp + min_temp) / 2, 1)
+        if wind is None:
+            wind = 1.5
+        feel = calculate_feels_like(temp, wind)
+        return {
+            "max_temp": max_temp,
+            "min_temp": min_temp,
+            "humidity": hum,
+            "wind": wind,
+            "avg_temp": temp,
+            "max_feel": feel
+        }
+    except:
+        return {}
+
 def get_weather_from_ultra_now(region_name):
     lat, lon = region_to_latlon.get(region_name, (37.5665, 126.9780))
     nx, ny = convert_latlon_to_xy(lat, lon)
     now = datetime.datetime.now()
     base_time = (now - datetime.timedelta(hours=1)).strftime("%H00")
     base_date = now.strftime("%Y%m%d")
-
     url = "http://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getUltraSrtNcst"
     params = {
         "serviceKey": KMA_API_KEY,
@@ -92,13 +147,11 @@ def get_weather_from_ultra_now(region_name):
         "nx": nx,
         "ny": ny
     }
-
     try:
         response = requests.get(url, params=params, timeout=5, verify=False)
         data = response.json()
         items = data.get("response", {}).get("body", {}).get("items", {}).get("item", [])
-        df = pd.DataFrame(items)
-        df = df.set_index("category")
+        df = pd.DataFrame(items).set_index("category")
         temp = float(df.loc["T1H"]["obsrValue"]) if "T1H" in df.index else None
         wind = float(df.loc["WSD"]["obsrValue"]) if "WSD" in df.index else None
         hum = float(df.loc["REH"]["obsrValue"]) if "REH" in df.index else None
@@ -113,7 +166,6 @@ def get_weather_from_ultra_fcst(region_name):
     now = datetime.datetime.now()
     base_time = (now - datetime.timedelta(hours=1)).strftime("%H00")
     base_date = now.strftime("%Y%m%d")
-
     url = "http://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getUltraSrtFcst"
     params = {
         "serviceKey": KMA_API_KEY,
@@ -125,7 +177,6 @@ def get_weather_from_ultra_fcst(region_name):
         "nx": nx,
         "ny": ny
     }
-
     try:
         response = requests.get(url, params=params, timeout=5, verify=False)
         data = response.json()
@@ -147,10 +198,8 @@ def get_weather_from_ultra_fcst(region_name):
 def get_weather_combined(region_name):
     data = get_weather_from_api(region_name)
     if data: return data
-
     data = get_weather_from_ultra_now(region_name)
     if data: return data
-
     data = get_weather_from_ultra_fcst(region_name)
     return data
 
