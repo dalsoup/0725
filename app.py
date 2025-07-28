@@ -97,13 +97,25 @@ def convert_latlon_to_xy(lat, lon):
     y = ro - ra * math.cos(theta) + YO + 0.5
     return int(x), int(y)
 
+def get_base_time(now):
+    valid_times = [2, 5, 8, 11, 14, 17, 20, 23]
+    for t in reversed(valid_times):
+        if now.hour >= t:
+            return f"{t:02d}00"
+    return "2300"
+
 def get_weather_from_api(region_name, target_date):
     latlon = region_to_latlon.get(region_name, (37.5665, 126.9780))
     nx, ny = convert_latlon_to_xy(*latlon)
 
-    # ✅ base_date를 target_date의 하루 전으로 고정
-    base_date = (target_date - datetime.timedelta(days=1)).strftime("%Y%m%d")
-    base_time = "2300"
+    # ✅ 날짜에 따라 base 시점 설정
+    if target_date == datetime.date.today():
+        now = datetime.datetime.now()
+        base_time = get_base_time(now)
+        base_date = now.strftime("%Y%m%d")
+    else:
+        base_time = "2300"
+        base_date = (target_date - datetime.timedelta(days=1)).strftime("%Y%m%d")
 
     params = {
         "serviceKey": KMA_API_KEY,
