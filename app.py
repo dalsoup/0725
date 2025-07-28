@@ -47,6 +47,9 @@ div.st-cj {
     color: #ffffff !important;
     font-weight: 600;
 }
+.css-13sd7wv.edgvbvh3 p {
+    font-size: 13px;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -105,6 +108,11 @@ def get_weather_from_api(region_name):
         return {c: float(closest.loc[c]["fcstValue"]) if c in closest.index else None for c in ["TMX", "TMN", "REH", "T3H", "WSD"]}
     except: return {}
 
+def calculate_avg_temp(tmx, tmn):
+    if tmx is not None and tmn is not None:
+        return round((tmx + tmn) / 2, 1)
+    return None
+
 region_to_latlon = {
     "서울특별시": (37.5665, 126.9780), "부산광역시": (35.1796, 129.0756), "대구광역시": (35.8722, 128.6025),
     "인천광역시": (37.4563, 126.7052), "광주광역시": (35.1595, 126.8526), "대전광역시": (36.3504, 127.3845),
@@ -118,17 +126,18 @@ region_to_latlon = {
 st.markdown("### 👋 Hello, User")
 st.caption("폭염에 따른 온열질환 발생 예측 플랫폼")
 
-head1, head2 = st.columns(2)
+head1, head2 = st.columns([1,1])
 with head1:
-    region = st.selectbox("지역 선택", list(region_to_latlon.keys()))
+    region = st.selectbox("지역 선택", list(region_to_latlon.keys()), label_visibility="visible")
 with head2:
-    date_selected = st.date_input("Select period", value=datetime.date.today())
+    today = datetime.date.today()
+    date_selected = st.date_input("Select period", value=today, min_value=today, max_value=today + datetime.timedelta(days=5))
 
 if region and date_selected:
     weather = get_weather_from_api(region)
+    avg_temp = calculate_avg_temp(weather.get("TMX"), weather.get("TMN"))
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("최고기온", f"{weather.get('TMX', 0):.1f}℃")
     col2.metric("최저기온", f"{weather.get('TMN', 0):.1f}℃")
-    avg = weather.get('T3H')
-    col3.metric("평균기온", f"{avg:.1f}℃" if avg is not None else "-℃")
+    col3.metric("평균기온", f"{avg_temp:.1f}℃" if avg_temp is not None else "-℃")
     col4.metric("습도", f"{weather.get('REH', 0):.1f}%")
