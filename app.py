@@ -42,11 +42,11 @@ div.st-cj {
     border: 1px solid #444c56 !important;
     border-radius: 6px;
     padding: 0.4rem 0.6rem;
-    font-size: 13px !important;
+    font-size: 14px !important;
     max-width: 100%;
     white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    overflow: visible;
+    text-overflow: initial;
 }
 .stMetricLabel, .stMetricValue {
     color: #ffffff !important;
@@ -133,7 +133,7 @@ st.caption("폭염에 따른 온열질환 발생 예측 플랫폼")
 
 head1, head2 = st.columns([1,1])
 with head1:
-    region = st.selectbox("지역 선택", list(region_to_latlon.keys()), label_visibility="visible")
+    region = st.selectbox("지역 선택", list(region_to_latlon.keys()), label_visibility="visible", key="region_select")
 with head2:
     today = datetime.date.today()
     date_selected = st.date_input("날짜 선택", value=today, min_value=today, max_value=today + datetime.timedelta(days=5))
