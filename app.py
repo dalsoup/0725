@@ -169,7 +169,7 @@ with c3:
 if predict_clicked and region and date_selected:
     weather = get_weather_from_api(region, date_selected)
     avg_temp = calculate_avg_temp(weather.get("TMX"), weather.get("TMN"))
-    st.markdown("#### 기상정보")
+    st.caption("기상정보")
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("최고기온", f"{weather.get('TMX', 0):.1f}℃")
     col2.metric("최저기온", f"{weather.get('TMN', 0):.1f}℃")
@@ -187,7 +187,7 @@ if predict_clicked and region and date_selected:
     pred = model.predict(input_df.drop(columns=["광역자치단체"]))[0]
     risk = get_risk_level(pred)
 
-    st.markdown("#### 온열질환자 예측")
+    st.caption("온열질환자 예측")
     c1, c2 = st.columns(2)
     c1.metric("예측 온열질환자 수", f"{pred:.2f}명")
     c2.metric("위험 등급", risk)
