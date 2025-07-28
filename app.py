@@ -144,19 +144,19 @@ if use_auto:
         weather_data = get_future_weather_data(region, date_selected)
     st.write("✅ 불러온 weather_data:", weather_data)
 
-    st.write("🔍 예측에 사용된 입력값:", input_df)
-
-    pred = model.predict(input_df.drop(columns=["광역자치단체"]))[0]
-
 if st.button("📊 온열질환 예측하기"):
     input_df = pd.DataFrame([{ 
         "광역자치단체": region,
-        "최고체감온도(°C)": max_feel,
-        "최고기온(°C)": max_temp,
-        "평균기온(°C)": avg_temp,
-        "최저기온(°C)": min_temp,
-        "평균상대습도(%)": humidity
+        "최고체감온도(°C)": weather_data.get("max_feel", 33.0),
+        "최고기온(°C)": weather_data.get("max_temp", 32.0),
+        "평균기온(°C)": weather_data.get("avg_temp", 28.5),
+        "최저기온(°C)": weather_data.get("min_temp", 25.0),
+        "평균상대습도(%)": weather_data.get("humidity", 70.0)
     }])
+
+    st.write("🔍 예측에 사용된 입력값:", input_df)
+
+    pred = model.predict(input_df.drop(columns=["광역자치단체"]))[0]
 
     def get_risk_level(pred):
         if pred == 0: return "🟢 매우 낮음"
