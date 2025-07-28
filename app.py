@@ -128,3 +128,21 @@ def get_weather_from_api(region_name):
         temp = round((max_temp + min_temp) / 2, 1)
     feel = 13.12 + 0.6215 * temp - 11.37 * (wind ** 0.16) + 0.3965 * temp * (wind ** 0.16)
     return {"max_temp": max_temp, "min_temp": min_temp, "humidity": hum, "wind": wind, "avg_temp": temp, "max_feel": round(feel, 1)}
+
+st.title("🌡️ 온열질환 예측 대시보드")
+
+selected = st.selectbox("📍 지역 선택", list(region_to_latlon.keys()))
+date_selected = st.date_input("📅 예측 날짜", value=datetime.date.today(), min_value=datetime.date.today(), max_value=datetime.date.today() + datetime.timedelta(days=5))
+
+if st.button("📊 예측 실행"):
+    weather = get_weather_from_api(selected)
+    if weather:
+        st.success("✅ API 정상 응답")
+        st.write("평균기온:", weather["avg_temp"])
+        st.write("최고기온:", weather["max_temp"])
+        st.write("최저기온:", weather["min_temp"])
+        st.write("습도:", weather["humidity"])
+        st.write("최고 체감온도:", weather["max_feel"])
+    else:
+        st.error("⚠️ 데이터를 불러올 수 없습니다.")
+
