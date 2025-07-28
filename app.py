@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import joblib
 import datetime
-from urllib.parse import unquote
 import requests
 import math
 import matplotlib.pyplot as plt
@@ -41,7 +40,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 model = joblib.load("trained_model.pkl")
-KMA_API_KEY = unquote(st.secrets["KMA"]["API_KEY"])
+KMA_API_KEY = st.secrets["KMA"]["API_KEY"]
 
 region_to_latlon = {
     "서울특별시": (37.5665, 126.9780), "부산광역시": (35.1796, 129.0756),
