@@ -151,67 +151,96 @@ def get_weather_from_api(region_name):
     }
 
 # ------------------ UI 시작 -------------------
+st.markdown("""
+<style>
+h1, h2, h3, h4, h5, h6, .stMarkdown {
+    font-family: 'Pretendard', sans-serif;
+}
+section.main > div {padding-top: 2rem;}
+div[data-testid="column"] > div {
+    background-color: #f9fafb;
+    border-radius: 12px;
+    padding: 24px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+}
+.stButton > button {
+    background-color: #3182f6;
+    color: white;
+    font-weight: 600;
+    padding: 0.6rem 1.2rem;
+    border-radius: 8px;
+    border: none;
+}
+.stButton > button:hover {
+    background-color: #2563eb;
+}
+.stNumberInput input {
+    background-color: #ffffff;
+    border-radius: 6px;
+}
+</style>
+""", unsafe_allow_html=True)
 
-st.subheader("온열질환 예측 대시보드")
+st.title("🌡️ 온열질환 예측 대시보드")
+st.caption("폭염으로 인한 응급환자 수를 예측하고 위험 수준을 확인하세요.")
 
+# 📅 Step 1
+st.subheader("📅 Step 1. 날짜 및 지역 선택")
 col1, col2 = st.columns(2)
 with col1:
-    date_selected = st.date_input("날짜", datetime.date.today(),
-                                   min_value=datetime.date.today(),
-                                   max_value=datetime.date.today() + datetime.timedelta(days=5))
+    date_selected = st.date_input(
+        "예측 날짜",
+        datetime.date.today(),
+        min_value=datetime.date.today(),
+        max_value=datetime.date.today() + datetime.timedelta(days=5)
+    )
 with col2:
     region = st.selectbox("광역자치단체", list(region_to_latlon.keys()))
 
-if "show_inputs" not in st.session_state:
-    st.session_state.show_inputs = False
+# API 사용 버튼
+st.divider()
+st.subheader("☁️ Step 2. 기상 정보 입력")
+use_api = st.toggle("기상청 API에서 자동 불러오기", value=True)
 
-if date_selected and region:
-    if st.button("☁️ 기상정보 확인하기"):
-        st.session_state.show_inputs = True
+if use_api:
+    weather_data = get_weather_from_api(region) or {}
+else:
+    weather_data = {}
 
-if st.session_state.show_inputs:
-    with st.container():
-        st.markdown("**기상 정보**")
+# 입력 영역
+st.markdown("**예측에 사용될 기상 정보를 확인하거나 직접 입력하세요.**")
+col1, col2, col3 = st.columns(3)
+with col1:
+    max_temp = st.number_input("최고기온(°C)", value=weather_data.get("max_temp", 32.0), step=0.1)
+    max_feel = st.number_input("최고체감온도(°C)", value=weather_data.get("max_feel", 33.0), step=0.1)
+with col2:
+    min_temp = st.number_input("최저기온(°C)", value=weather_data.get("min_temp", 25.0), step=0.1)
+    humidity = st.number_input("평균상대습도(%)", value=weather_data.get("humidity", 70.0), min_value=0.0, max_value=100.0, step=1.0)
+with col3:
+    avg_temp = st.number_input("평균기온(°C)", value=weather_data.get("avg_temp", 28.5), step=0.1)
 
-        use_api = st.checkbox("기상청 단기예보 API 사용", key="api_checkbox")
+# 예측 버튼
+if st.button("📊 예측하기"):
+    input_df = pd.DataFrame([{
+        "광역자치단체": region,
+        "최고체감온도(°C)": max_feel,
+        "최고기온(°C)": max_temp,
+        "평균기온(°C)": avg_temp,
+        "최저기온(°C)": min_temp,
+        "평균상대습도(%)": humidity
+    }])
+    pred = model.predict(input_df.drop(columns=["광역자치단체"]))[0]
 
-        if use_api:
-            weather_data = get_weather_from_api(region) or {}
-        else:
-            weather_data = {}
+    def get_risk_level(p):
+        if p == 0: return "🟢 매우 낮음"
+        elif p <= 2: return "🟡 낮음"
+        elif p <= 5: return "🟠 보통"
+        elif p <= 10: return "🔴 높음"
+        else: return "🔥 매우 높음"
 
-        st.write("필요시 직접 수정 후 예측 버튼을 누르세요.")
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            max_temp = st.number_input("최고기온(°C)", value=weather_data.get("max_temp", 32.0), key="max_temp")
-            max_feel = st.number_input("최고체감온도(°C)", value=weather_data.get("max_feel", 33.0), key="max_feel")
-        with col2:
-            min_temp = st.number_input("최저기온(°C)", value=weather_data.get("min_temp", 25.0), key="min_temp")
-            humidity = st.number_input("평균상대습도(%)", value=weather_data.get("humidity", 70.0), key="humidity")
-        with col3:
-            avg_temp = st.number_input("평균기온(°C)", value=weather_data.get("avg_temp", 28.5), key="avg_temp")
+    risk = get_risk_level(pred)
 
-        if use_api or any([weather_data.get(k) is not None for k in ["max_temp", "min_temp", "avg_temp"]]):
-            if st.button("📊 온열질환 예측하기"):
-                input_df = pd.DataFrame([{ 
-                    "광역자치단체": region,
-                    "최고체감온도(°C)": max_feel,
-                    "최고기온(°C)": max_temp,
-                    "평균기온(°C)": avg_temp,
-                    "최저기온(°C)": min_temp,
-                    "평균상대습도(%)": humidity
-                }])
-                pred = model.predict(input_df.drop(columns=["광역자치단체"]))[0]
-
-                def get_risk_level(pred):
-                    if pred == 0: return "🟢 매우 낮음"
-                    elif pred <= 2: return "🟡 낮음"
-                    elif pred <= 5: return "🟠 보통"
-                    elif pred <= 10: return "🔴 높음"
-                    else: return "🔥 매우 높음"
-
-                risk = get_risk_level(pred)
-
-                st.markdown("### ✅ **예측 결과**", unsafe_allow_html=True)
-                st.success(f"**예측 환자 수: {pred:.2f}명**", icon="✅")
-                st.markdown(f"### 위험 등급: **{risk}**")
+    st.divider()
+    st.subheader("📈 Step 3. 예측 결과")
+    st.success(f"**예측 환자 수: {pred:.2f}명**")
+    st.markdown(f"**위험 등급:** `{risk}`")
