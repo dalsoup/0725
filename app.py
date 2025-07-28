@@ -114,82 +114,20 @@ region_to_latlon = {
     "경상남도": (35.4606, 128.2132), "제주특별자치도": (33.4996, 126.5312)
 }
 
-# ----------- UI -----------
+# ----------- HEADER UI -----------
 st.markdown("### 👋 Hello, User")
-col1, col2, col3 = st.columns([3, 2, 1])
-with col1: st.caption("폭염에 따른 온열질환 발생 예측 플랫폼")
-with col2: date_selected = st.date_input("Select period", value=(datetime.date.today(), datetime.date.today()))
-with col3: st.button("📤 새 리포트")
+st.caption("폭염에 따른 온열질환 발생 예측 플랫폼")
 
-st.markdown("#### ☁️ 오늘의 기상정보")
-region = st.selectbox("지역 선택", list(region_to_latlon.keys()))
-data = get_weather_from_api(region)
+head1, head2 = st.columns([2, 3])
+with head1:
+    region = st.selectbox("지역 선택", list(region_to_latlon.keys()))
+with head2:
+    date_selected = st.date_input("Select period", value=(datetime.date.today(), datetime.date.today()))
 
-col1, col2, col3 = st.columns(3)
-with col1:
-    max_temp = st.number_input("최고기온(°C)", value=data.get("TMX", 32.0), step=0.1)
-    max_feel = st.number_input("최고체감온도(°C)", value=max_temp + 1.5, step=0.1)
-with col2:
-    min_temp = st.number_input("최저기온(°C)", value=data.get("TMN", 25.0), step=0.1)
-    humidity = st.number_input("평균상대습도(%)", value=data.get("REH", 70.0), step=1.0)
-with col3:
-    avg_temp = st.number_input("평균기온(°C)", value=data.get("T3H", 28.5), step=0.1)
-
-input_df = pd.DataFrame([{ 
-    "광역자치단체": region,
-    "최고체감온도(°C)": max_feel,
-    "최고기온(°C)": max_temp,
-    "평균기온(°C)": avg_temp,
-    "최저기온(°C)": min_temp,
-    "평균상대습도(%)": humidity
-}])
-pred = model.predict(input_df.drop(columns=["광역자치단체"]))[0]
-risk = get_risk_level(pred)
-
-# ----------- PREDICTION LOGGING -----------
-input_df["날짜"] = datetime.date.today().strftime("%Y-%m-%d")
-input_df["예측환자수"] = pred
-log_path = "prediction_log.csv"
-try:
-    if not pd.io.common.file_exists(log_path):
-        input_df.to_csv(log_path, index=False)
-    else:
-        log_df = pd.read_csv(log_path)
-        combined = pd.concat([log_df, input_df], ignore_index=True)
-        combined.drop_duplicates(subset=["날짜", "광역자치단체"], keep="last", inplace=True)
-        combined.to_csv(log_path, index=False)
-except Exception as e:
-    st.warning(f"[예측값 저장 실패] {e}")
-
-# ----------- SUMMARY CARDS -----------
-st.markdown("#### 📊 요약")
-sum1, sum2, sum3, sum4 = st.columns(4)
-sum1.metric("예측 환자 수", f"{pred:.2f}명")
-sum2.metric("위험 등급", risk)
-sum3.metric("최고기온", f"{max_temp:.1f}°C")
-sum4.metric("습도", f"{humidity:.1f}%")
-
-# ----------- VISUALIZATION -----------
-st.markdown("#### 📈 예측 기록 그래프")
-try:
-    df_log = pd.read_csv("prediction_log.csv")
-    df_log["날짜"] = pd.to_datetime(df_log["날짜"])
-    region_filter = st.selectbox("지역별 기록 보기", sorted(df_log["광역자치단체"].unique()))
-    filtered = df_log[df_log["광역자치단체"] == region_filter].sort_values("날짜")
-    fig, ax = plt.subplots(figsize=(12,4))
-    ax.plot(filtered["날짜"], filtered["예측환자수"], marker="o", color="#3182f6", label="2025 예측값")
-    last_year = filtered.copy(); last_year["날짜"] = last_year["날짜"] - pd.DateOffset(years=1)
-    ax.plot(last_year["날짜"], last_year["예측환자수"], linestyle="--", color="#9ca3af", label="2024 동일일 예측")
-    for _, row in filtered.iterrows():
-        if row["예측환자수"] > 10:
-            ax.axvspan(row["날짜"] - pd.Timedelta(days=0.5), row["날짜"] + pd.Timedelta(days=0.5), color="#fee2e2", alpha=0.4)
-    for _, row in filtered.iterrows():
-        emoji = get_risk_level(row["예측환자수"]).split()[0]
-        ax.text(row["날짜"], row["예측환자수"] + 0.5, emoji, fontsize=9, ha="center")
-    ax.set_title(f"{region_filter} 예측 환자수 추이", fontsize=14)
-    ax.set_xlabel("날짜"); ax.set_ylabel("예측환자수")
-    ax.legend(); ax.grid(True, linestyle="--", alpha=0.3)
-    st.pyplot(fig)
-    st.download_button("📥 예측 기록 CSV 다운로드", df_log.to_csv(index=False).encode("utf-8-sig"), file_name="prediction_log.csv", mime="text/csv")
-except:
-    st.info("📁 예측 기록이 아직 충분하지 않거나 그래프를 그릴 수 없습니다.")
+if region and date_selected:
+    weather = get_weather_from_api(region)
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("최고기온", f"{weather.get('TMX', 0):.1f}℃")
+    col2.metric("최저기온", f"{weather.get('TMN', 0):.1f}℃")
+    col3.metric("평균기온", f"{weather.get('T3H', 0):.1f}℃")
+    col4.metric("습도", f"{weather.get('REH', 0):.1f}%")
