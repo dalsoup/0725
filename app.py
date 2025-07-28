@@ -8,7 +8,7 @@ from urllib.parse import unquote
 import matplotlib.pyplot as plt
 
 # ----------- STYLE (Dark Mode) -----------
-st.set_page_config(layout="wide")
+st.set_page_config(layout="centered")
 st.markdown("""
 <style>
 html, body, .stApp {
@@ -118,16 +118,17 @@ region_to_latlon = {
 st.markdown("### 👋 Hello, User")
 st.caption("폭염에 따른 온열질환 발생 예측 플랫폼")
 
-head1, head2 = st.columns([2, 3])
+head1, head2 = st.columns(2)
 with head1:
     region = st.selectbox("지역 선택", list(region_to_latlon.keys()))
 with head2:
-    date_selected = st.date_input("Select period", value=(datetime.date.today(), datetime.date.today()))
+    date_selected = st.date_input("Select period", value=datetime.date.today())
 
 if region and date_selected:
     weather = get_weather_from_api(region)
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("최고기온", f"{weather.get('TMX', 0):.1f}℃")
     col2.metric("최저기온", f"{weather.get('TMN', 0):.1f}℃")
-    col3.metric("평균기온", f"{weather.get('T3H', 0):.1f}℃")
+    avg = weather.get('T3H')
+    col3.metric("평균기온", f"{avg:.1f}℃" if avg is not None else "-℃")
     col4.metric("습도", f"{weather.get('REH', 0):.1f}%")
