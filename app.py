@@ -10,10 +10,13 @@ import matplotlib.pyplot as plt
 # ----------- STYLE (Dark Mode) -----------
 st.set_page_config(layout="centered")
 st.markdown("""
+<link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css" rel="stylesheet" />
+
 <style>
 html, body, .stApp {
     background-color: #0e1117 !important;
     color: #ffffff !important;
+    font-family: 'Pretendard', sans-serif !important;
 }
 div[data-testid="column"] > div {
     background-color: #1e1e1e;
