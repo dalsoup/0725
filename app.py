@@ -163,7 +163,7 @@ with c1:
     region = st.selectbox("지역 선택", list(region_to_latlon.keys()), label_visibility="visible", key="region_select")
 with c2:
     today = datetime.date.today()
-    date_selected = st.date_input("날짜 선택", value=today, min_value=today, max_value=today + datetime.timedelta(days=5))
+    date_selected = st.date_input("날짜를 선택하세요", min_value=today, max_value=today + datetime.timedelta(days=3))
 with c3:
     predict_clicked = st.button("예측하기")
 
