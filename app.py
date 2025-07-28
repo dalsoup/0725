@@ -7,24 +7,23 @@ import math
 from urllib.parse import unquote
 import matplotlib.pyplot as plt
 
-# ----------- STYLE (Toss-like) -----------
+# ----------- STYLE (Dark Mode) -----------
 st.set_page_config(layout="wide")
 st.markdown("""
 <style>
 html, body, .stApp {
-    background-color: #ffffff !important;
-    font-family: 'Pretendard', 'Noto Sans KR', sans-serif;
-    color: #111827;
+    background-color: #0e1117 !important;
+    color: #ffffff !important;
 }
 div[data-testid="column"] > div {
-    background-color: #f9fafb;
+    background-color: #1e1e1e;
     border-radius: 12px;
     padding: 24px;
     margin-bottom: 16px;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+    box-shadow: 0 2px 6px rgba(0,0,0,0.3);
 }
 .stButton > button {
-    background-color: #3182f6;
+    background-color: #2563eb;
     color: white;
     font-weight: 600;
     padding: 0.6rem 1.2rem;
@@ -32,19 +31,19 @@ div[data-testid="column"] > div {
     border: none;
 }
 .stButton > button:hover {
-    background-color: #2563eb;
+    background-color: #1d4ed8;
 }
 .stNumberInput input,
 .stSelectbox div,
 div.st-cj {
-    background-color: #ffffff !important;
-    color: #111827 !important;
-    border: 1px solid #e5e7eb !important;
+    background-color: #2c2f36 !important;
+    color: #ffffff !important;
+    border: 1px solid #444c56 !important;
     border-radius: 6px;
     padding: 0.4rem 0.6rem;
 }
 .stMetricLabel, .stMetricValue {
-    color: #111827 !important;
+    color: #ffffff !important;
     font-weight: 600;
 }
 </style>
