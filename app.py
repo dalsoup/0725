@@ -168,15 +168,21 @@ if predict:
             "humidity": reh,
             "wind": wsd
         }])
-        pred = model.predict(input_df)[0]
-        risk = get_risk_level(pred)
 
-        st.markdown("### ☁️ 오늘의 기상정보")
-        st.metric("최고기온", f"{tmx}℃" if tmx is not None else "-℃")
-        st.metric("최저기온", f"{tmn}℃" if tmn is not None else "-℃")
-        st.metric("평균기온", f"{avg_temp}℃" if avg_temp is not None else "-℃")
-        st.metric("습도", f"{reh}%")
+        try:
+            pred = model.predict(input_df.values)[0]  # 수정된 부분
+            risk = get_risk_level(pred)
 
-        st.markdown("### 💡 온열질환자 예측")
-        st.metric("예측 온열질환자 수", f"{pred:.2f}명")
-        st.metric("위험 등급", risk)
+            st.markdown("### ☁️ 오늘의 기상정보")
+            st.metric("최고기온", f"{tmx}℃" if tmx is not None else "-℃")
+            st.metric("최저기온", f"{tmn}℃" if tmn is not None else "-℃")
+            st.metric("평균기온", f"{avg_temp}℃" if avg_temp is not None else "-℃")
+            st.metric("습도", f"{reh}%")
+
+            st.markdown("### 💡 온열질환자 예측")
+            st.metric("예측 온열질환자 수", f"{pred:.2f}명")
+            st.metric("위험 등급", risk)
+
+        except Exception as e:
+            st.error(f"예측 중 오류가 발생했습니다: {e}")
+            st.write("입력값:", input_df)
