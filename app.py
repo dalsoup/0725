@@ -47,6 +47,8 @@ div.st-cj {
     white-space: nowrap;
     overflow: visible;
     text-overflow: initial;
+    line-height: 1.2rem;
+    height: auto;
 }
 .stMetricLabel, .stMetricValue {
     color: #ffffff !important;
