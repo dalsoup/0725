@@ -154,7 +154,7 @@ with c3:
 if predict_clicked and region and date_selected:
     weather = get_weather_from_api(region, date_selected)
     avg_temp = calculate_avg_temp(weather.get("TMX"), weather.get("TMN"))
-    st.markdown("#### ☁️ 오늘의 기상정보")
+    st.markdown("#### 기상정보")
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("최고기온", f"{weather.get('TMX', 0):.1f}℃")
     col2.metric("최저기온", f"{weather.get('TMN', 0):.1f}℃")
