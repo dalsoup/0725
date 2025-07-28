@@ -100,9 +100,8 @@ def convert_latlon_to_xy(lat, lon):
 def get_weather_from_api(region_name, target_date):
     latlon = region_to_latlon.get(region_name, (37.5665, 126.9780))
     nx, ny = convert_latlon_to_xy(*latlon)
-    now = datetime.datetime.now()
-    base_time = max([h for h in [2, 5, 8, 11, 14, 17, 20, 23] if now.hour >= h], default=23)
-    base_date = now.strftime("%Y%m%d") if now.hour >= base_time else (now - datetime.timedelta(days=1)).strftime("%Y%m%d")
+    base_time = max([h for h in [2, 5, 8, 11, 14, 17, 20, 23] if datetime.datetime.now().hour >= h], default=23)
+    base_date = target_date.strftime("%Y%m%d")
 
     params = {
         "serviceKey": KMA_API_KEY, "numOfRows": "300", "pageNo": "1", "dataType": "JSON",
@@ -154,7 +153,7 @@ with c3:
 if predict_clicked and region and date_selected:
     weather = get_weather_from_api(region, date_selected)
     avg_temp = calculate_avg_temp(weather.get("TMX"), weather.get("TMN"))
-    st.markdown("#### 기상정보")
+    st.markdown("#### ☁️ 오늘의 기상정보")
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("최고기온", f"{weather.get('TMX', 0):.1f}℃")
     col2.metric("최저기온", f"{weather.get('TMN', 0):.1f}℃")
