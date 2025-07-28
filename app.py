@@ -129,6 +129,16 @@ def calculate_avg_temp(tmx, tmn):
     except:
         return None
 
+def calculate_heat_index(temp_c, humidity):
+    T, R = temp_c, humidity
+    return round(
+        -8.784695 + 1.61139411*T + 2.338549*R
+        - 0.14611605*T*R - 0.012308094*T**2
+        - 0.016424828*R**2 + 0.002211732*T**2*R
+        + 0.00072546*T*R**2 - 0.000003582*T**2*R**2,
+        1
+    )
+
 def get_risk_level(pred):
     if pred == 0: return "🟢 매우 낮음"
     elif pred <= 2: return "🟡 낮음"
@@ -156,28 +166,32 @@ if predict:
     if not weather:
         st.error("기상 데이터가 부족하여 예측할 수 없습니다.")
     else:
-        tmx = weather.get("TMX")
-        tmn = weather.get("TMN")
-        avg_temp = calculate_avg_temp(tmx, tmn)
+        tmax = weather.get("TMX")
+        tmin = weather.get("TMN")
+        avg_temp = calculate_avg_temp(tmax, tmin)
         t3h = weather.get("T3H", avg_temp)
-        reh = weather.get("REH", 60)
-        wsd = weather.get("WSD", 1)
+        humidity = weather.get("REH", 60)
+        wind = weather.get("WSD", 1)
+        heat_index = calculate_heat_index(t3h, humidity)
 
         input_df = pd.DataFrame([{
-            "avg_temp": t3h,
-            "humidity": reh,
-            "wind": wsd
+            "최고체감온도(°C)": heat_index,
+            "최고기온(°C)": tmax,
+            "평균기온(°C)": t3h,
+            "최저기온(°C)": tmin,
+            "평균상대습도(%)": humidity
         }])
 
         try:
-            pred = model.predict(input_df.values)[0]  # 수정된 부분
+            pred = model.predict(input_df.values)[0]
             risk = get_risk_level(pred)
 
             st.markdown("### ☁️ 오늘의 기상정보")
-            st.metric("최고기온", f"{tmx}℃" if tmx is not None else "-℃")
-            st.metric("최저기온", f"{tmn}℃" if tmn is not None else "-℃")
+            st.metric("최고기온", f"{tmax}℃" if tmax is not None else "-℃")
+            st.metric("최저기온", f"{tmin}℃" if tmin is not None else "-℃")
             st.metric("평균기온", f"{avg_temp}℃" if avg_temp is not None else "-℃")
-            st.metric("습도", f"{reh}%")
+            st.metric("습도", f"{humidity}%")
+            st.metric("체감온도", f"{heat_index}℃")
 
             st.markdown("### 💡 온열질환자 예측")
             st.metric("예측 온열질환자 수", f"{pred:.2f}명")
