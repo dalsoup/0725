@@ -97,12 +97,13 @@ def convert_latlon_to_xy(lat, lon):
     y = ro - ra * math.cos(theta) + YO + 0.5
     return int(x), int(y)
 
-def get_weather_from_api(region_name):
+def get_weather_from_api(region_name, target_date):
     latlon = region_to_latlon.get(region_name, (37.5665, 126.9780))
     nx, ny = convert_latlon_to_xy(*latlon)
     now = datetime.datetime.now()
     base_time = max([h for h in [2, 5, 8, 11, 14, 17, 20, 23] if now.hour >= h], default=23)
     base_date = now.strftime("%Y%m%d") if now.hour >= base_time else (now - datetime.timedelta(days=1)).strftime("%Y%m%d")
+
     params = {
         "serviceKey": KMA_API_KEY, "numOfRows": "300", "pageNo": "1", "dataType": "JSON",
         "base_date": base_date, "base_time": f"{base_time:02d}00", "nx": nx, "ny": ny
@@ -112,11 +113,16 @@ def get_weather_from_api(region_name):
         items = r.json().get("response", {}).get("body", {}).get("items", {}).get("item", [])
         df = pd.DataFrame(items)
         df = df[df["category"].isin(["T3H", "TMX", "TMN", "REH", "WSD"])]
-        df["fcstHour"] = df["fcstTime"].astype(int) // 100
-        df["hour_diff"] = abs(df["fcstHour"] - now.hour)
-        closest = df.loc[df.groupby("category")["hour_diff"].idxmin()].set_index("category")
-        return {c: float(closest.loc[c]["fcstValue"]) if c in closest.index else None for c in ["TMX", "TMN", "REH", "T3H", "WSD"]}
-    except: return {}
+        target_str = target_date.strftime("%Y%m%d")
+        df = df[df["fcstDate"] == target_str]
+        summary = {}
+        for cat in ["TMX", "TMN", "REH", "T3H", "WSD"]:
+            values = df[df["category"] == cat]["fcstValue"].astype(float)
+            if not values.empty:
+                summary[cat] = values.mean() if cat in ["REH", "T3H"] else values.iloc[0]
+        return summary
+    except:
+        return {}
 
 def calculate_avg_temp(tmx, tmn):
     if tmx is not None and tmn is not None:
@@ -146,7 +152,7 @@ with c3:
     predict_clicked = st.button("예측하기")
 
 if predict_clicked and region and date_selected:
-    weather = get_weather_from_api(region)
+    weather = get_weather_from_api(region, date_selected)
     avg_temp = calculate_avg_temp(weather.get("TMX"), weather.get("TMN"))
     st.markdown("#### ☁️ 오늘의 기상정보")
     col1, col2, col3, col4 = st.columns(4)
