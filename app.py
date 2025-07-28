@@ -36,7 +36,8 @@ div[data-testid="column"] > div {
 .stNumberInput input,
 .stSelectbox > div > div,
 .stSelectbox select,
-div.st-cj {
+div.st-cj,
+.css-1cpxqw2.edgvbvh3, .stDateInput input {
     background-color: #2c2f36 !important;
     color: #ffffff !important;
     border: 1px solid #444c56 !important;
@@ -45,10 +46,10 @@ div.st-cj {
     font-size: 14px !important;
     max-width: 100%;
     white-space: nowrap;
-    overflow: visible;
-    text-overflow: initial;
+    overflow: hidden;
+    text-overflow: ellipsis;
     line-height: 1.2rem;
-    height: auto;
+    height: 45px !important;
 }
 .stMetricLabel, .stMetricValue {
     color: #ffffff !important;
