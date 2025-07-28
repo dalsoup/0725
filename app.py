@@ -7,7 +7,7 @@ import math
 from urllib.parse import unquote
 import matplotlib.pyplot as plt
 
-# ----------- STYLE (Dark Mode) -----------
+# ----------- STYLE -----------
 st.set_page_config(layout="centered")
 st.markdown("""
 <style>
@@ -46,25 +46,18 @@ div.st-cj,
     border-radius: 6px;
     padding: 0.4rem 0.6rem;
     font-size: 14px !important;
-    max-width: 100%;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    line-height: 1.2rem;
     height: 45px !important;
 }
 .stMetricLabel, .stMetricValue {
     color: #ffffff !important;
     font-weight: 600;
 }
-.css-13sd7wv.edgvbvh3 p {
-    font-size: 13px;
-}
 </style>
 """, unsafe_allow_html=True)
 
-# ----------- MODEL LOAD -----------
+# ----------- LOAD MODEL & FEATURES -----------
 model = joblib.load("trained_model.pkl")
+features = joblib.load("feature_names.pkl")
 
 # ----------- API KEY -----------
 KMA_API_KEY = unquote(st.secrets["KMA"]["API_KEY"])
@@ -97,13 +90,25 @@ def convert_latlon_to_xy(lat, lon):
     y = ro - ra * math.cos(theta) + YO + 0.5
     return int(x), int(y)
 
+def get_latest_base_time():
+    now = datetime.datetime.now()
+    hour = now.hour
+    if hour < 2: return "2300"
+    elif hour < 5: return "0200"
+    elif hour < 8: return "0500"
+    elif hour < 11: return "0800"
+    elif hour < 14: return "1100"
+    elif hour < 17: return "1400"
+    elif hour < 20: return "1700"
+    elif hour < 23: return "2000"
+    else: return "2300"
+
 def get_weather_from_api(region_name, target_date):
     latlon = region_to_latlon.get(region_name, (37.5665, 126.9780))
     nx, ny = convert_latlon_to_xy(*latlon)
 
-    # ✅ base_date를 target_date의 하루 전으로 고정
     base_date = (target_date - datetime.timedelta(days=1)).strftime("%Y%m%d")
-    base_time = "2300"
+    base_time = get_latest_base_time()
 
     params = {
         "serviceKey": KMA_API_KEY,
@@ -116,22 +121,23 @@ def get_weather_from_api(region_name, target_date):
         r = requests.get("http://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getVilageFcst", params=params, timeout=10, verify=False)
         items = r.json().get("response", {}).get("body", {}).get("items", {}).get("item", [])
         df = pd.DataFrame(items)
-        df = df[df["category"].isin(["T3H", "TMX", "TMN", "REH", "WSD"])]
-        target_str = target_date.strftime("%Y%m%d")
-        df = df[df["fcstDate"] == target_str]
+        df = df[df["category"].isin(["TMX", "TMN", "REH", "WSD"])]
+        df = df[df["fcstDate"] == target_date.strftime("%Y%m%d")]
         summary = {}
-        for cat in ["TMX", "TMN", "REH", "T3H", "WSD"]:
+        for cat in ["TMX", "TMN", "REH", "WSD"]:
             values = df[df["category"] == cat]["fcstValue"].astype(float)
             if not values.empty:
-                summary[cat] = values.mean() if cat in ["REH", "T3H"] else values.iloc[0]
+                summary[cat] = values.mean() if cat == "REH" else values.iloc[0]
         return summary
-    except:
+    except Exception as e:
         return {}
 
 def calculate_avg_temp(tmx, tmn):
     if tmx is not None and tmn is not None:
         return round((tmx + tmn) / 2, 1)
     return None
+
+# ----------- UI -----------
 
 region_to_latlon = {
     "서울특별시": (37.5665, 126.9780), "부산광역시": (35.1796, 129.0756), "대구광역시": (35.8722, 128.6025),
@@ -142,50 +148,53 @@ region_to_latlon = {
     "경상남도": (35.4606, 128.2132), "제주특별자치도": (33.4996, 126.5312)
 }
 
-# ----------- HEADER UI -----------
-st.markdown("### 👋 Hello, User")
-st.caption("폭염에 따른 온열질환 발생 예측 플랫폼")
+st.markdown("### ☀️ 온열질환 예측 대시보드")
+st.caption("폭염에 따른 온열질환자 수를 예측합니다.")
 
 c1, c2, c3 = st.columns([2, 2, 1])
 with c1:
-    region = st.selectbox("지역 선택", list(region_to_latlon.keys()), label_visibility="visible", key="region_select")
+    region = st.selectbox("지역 선택", list(region_to_latlon.keys()))
 with c2:
     today = datetime.date.today()
-    date_selected = st.date_input("날짜 선택", value=today, min_value=today, max_value=today + datetime.timedelta(days=5))
+    date_selected = st.date_input("날짜 선택", value=today, min_value=today, max_value=today + datetime.timedelta(days=6))
 with c3:
     predict_clicked = st.button("예측하기")
 
-if predict_clicked and region and date_selected:
+if predict_clicked:
     weather = get_weather_from_api(region, date_selected)
-    avg_temp = calculate_avg_temp(weather.get("TMX"), weather.get("TMN"))
-    st.markdown("#### ☁️ 오늘의 기상정보")
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("최고기온", f"{weather.get('TMX', 0):.1f}℃")
-    col2.metric("최저기온", f"{weather.get('TMN', 0):.1f}℃")
-    col3.metric("평균기온", f"{avg_temp:.1f}℃" if avg_temp is not None else "-℃")
-    col4.metric("습도", f"{weather.get('REH', 0):.1f}%")
+    if not weather or weather.get("TMX") is None or weather.get("TMN") is None:
+        st.error("예보 데이터를 불러오지 못했습니다. 잠시 후 다시 시도해주세요.")
+        st.stop()
 
-    input_df = pd.DataFrame([{ 
-        "광역자치단체": region,
-        "최고체감온도(°C)": weather.get("TMX", 0) + 1.5,
-        "최고기온(°C)": weather.get("TMX", 0),
-        "평균기온(°C)": avg_temp or 0,
-        "최저기온(°C)": weather.get("TMN", 0),
-        "평균상대습도(%)": weather.get("REH", 0)
-    }])
-    pred = model.predict(input_df.drop(columns=["광역자치단체"]))[0]
+    avg_temp = calculate_avg_temp(weather["TMX"], weather["TMN"])
+
+    st.markdown("#### ☁️ 기상 정보 요약")
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("최고기온", f"{weather['TMX']:.1f}℃")
+    col2.metric("최저기온", f"{weather['TMN']:.1f}℃")
+    col3.metric("평균기온", f"{avg_temp:.1f}℃")
+    col4.metric("습도", f"{weather['REH']:.1f}%")
+
+    input_data = {
+        "최고체감온도(°C)": weather["TMX"] + 1.5,
+        "최고기온(°C)": weather["TMX"],
+        "평균기온(°C)": avg_temp,
+        "최저기온(°C)": weather["TMN"],
+        "평균상대습도(%)": weather["REH"]
+    }
+    input_df = pd.DataFrame([input_data])[features]
+
+    pred = model.predict(input_df)[0]
     risk = get_risk_level(pred)
 
     st.markdown("#### 💡 온열질환자 예측")
-    c1, c2 = st.columns(2)
-    c1.metric("예측 온열질환자 수", f"{pred:.2f}명")
-    c2.metric("위험 등급", risk)
+    col1, col2 = st.columns(2)
+    col1.metric("예측 환자 수", f"{pred:.2f}명")
+    col2.metric("위험 등급", risk)
 
-    diff = pred - 6.8
-    if diff >= 0:
-        st.caption(f"전년도 대비 +{diff:.1f}명")
-    else:
-        st.caption(f"전년도 대비 {diff:.1f}명")
+    baseline = 6.8
+    diff = pred - baseline
+    st.caption(f"전년도 대비 {'+' if diff >= 0 else ''}{diff:.1f}명")
 
     if "🔥" in risk:
         st.warning("🚨 매우 높음: 외출 자제 및 냉방기기 사용 권고")
