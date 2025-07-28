@@ -17,6 +17,7 @@ def load_excel_data():
     return temp_df, reh_df, tmx_df, tmn_df, wind_df
 
 temp_df, reh_df, tmx_df, tmn_df, wind_df = load_excel_data()
+st.write("✅ 기온 데이터 컬럼 확인:", temp_df.columns)
 
 # UI 구성
 st.title("🔥 폭염 위험도 예측 대시보드")
