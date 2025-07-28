@@ -45,7 +45,7 @@ KMA_API_KEY = st.secrets["KMA"]["API_KEY"]
 region_to_latlon = {
     "서울특별시": (37.5665, 126.9780), "부산광역시": (35.1796, 129.0756),
     "대구광역시": (35.8722, 128.6025), "인천광역시": (37.4563, 126.7052),
-    "광주광역시": (35.1595, 126.8526), "대전광역시": (36.3504, 127.3845),
+    "광주광역시": (35.1595, 126.8526), "대전광역시": (36.3504, 127.3840),
     "울산광역시": (35.5384, 129.3114), "세종특별자치시": (36.4800, 127.2890),
     "경기도": (37.4138, 127.5183), "강원도": (37.8228, 128.1555),
     "충청북도": (36.6358, 127.4917), "충청남도": (36.5184, 126.8000),
@@ -105,9 +105,14 @@ def get_weather_from_api(region_name):
     try:
         response = requests.get(url, params=params, timeout=10, verify=False)
         st.write("✅ 상태코드:", response.status_code)
-        st.json(response.json())  # 디버깅용 응답 확인
+        st.write("📦 응답 내용:", response.text[:500])  # 응답 일부 출력
 
-        data = response.json()
+        try:
+            data = response.json()
+        except ValueError:
+            st.error("⚠️ 응답이 JSON 형식이 아닙니다. 위 응답 내용을 확인하세요.")
+            return None
+
         items = data["response"]["body"]["items"]["item"]
     except Exception as e:
         st.error(f"❌ API 요청 실패: {e}")
@@ -128,21 +133,3 @@ def get_weather_from_api(region_name):
         temp = round((max_temp + min_temp) / 2, 1)
     feel = 13.12 + 0.6215 * temp - 11.37 * (wind ** 0.16) + 0.3965 * temp * (wind ** 0.16)
     return {"max_temp": max_temp, "min_temp": min_temp, "humidity": hum, "wind": wind, "avg_temp": temp, "max_feel": round(feel, 1)}
-
-st.title("🌡️ 온열질환 예측 대시보드")
-
-selected = st.selectbox("📍 지역 선택", list(region_to_latlon.keys()))
-date_selected = st.date_input("📅 예측 날짜", value=datetime.date.today(), min_value=datetime.date.today(), max_value=datetime.date.today() + datetime.timedelta(days=5))
-
-if st.button("📊 예측 실행"):
-    weather = get_weather_from_api(selected)
-    if weather:
-        st.success("✅ API 정상 응답")
-        st.write("평균기온:", weather["avg_temp"])
-        st.write("최고기온:", weather["max_temp"])
-        st.write("최저기온:", weather["min_temp"])
-        st.write("습도:", weather["humidity"])
-        st.write("최고 체감온도:", weather["max_feel"])
-    else:
-        st.error("⚠️ 데이터를 불러올 수 없습니다.")
-
