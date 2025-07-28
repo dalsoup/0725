@@ -130,14 +130,18 @@ def calculate_avg_temp(tmx, tmn):
         return None
 
 def calculate_heat_index(temp_c, humidity):
-    T, R = temp_c, humidity
-    return round(
-        -8.784695 + 1.61139411*T + 2.338549*R
-        - 0.14611605*T*R - 0.012308094*T**2
-        - 0.016424828*R**2 + 0.002211732*T**2*R
-        + 0.00072546*T*R**2 - 0.000003582*T**2*R**2,
-        1
-    )
+    try:
+        T = float(temp_c)
+        R = float(humidity)
+        return round(
+            -8.784695 + 1.61139411*T + 2.338549*R
+            - 0.14611605*T*R - 0.012308094*T**2
+            - 0.016424828*R**2 + 0.002211732*T**2*R
+            + 0.00072546*T*R**2 - 0.000003582*T**2*R**2,
+            1
+        )
+    except:
+        return None
 
 def get_risk_level(pred):
     if pred == 0: return "🟢 매우 낮음"
@@ -159,6 +163,7 @@ with col3:
     st.markdown(" ")
     predict = st.button("예측하기")
 
+# 🔮 예측하기 버튼 눌렀을 때
 if predict:
     with st.spinner("📡 기상청 데이터를 불러오는 중..."):
         weather = get_weather(region, date)
@@ -172,8 +177,20 @@ if predict:
         t3h = weather.get("T3H", avg_temp)
         humidity = weather.get("REH", 60)
         wind = weather.get("WSD", 1)
+
+        # 🔐 안전하게 변환
+        try:
+            t3h = float(t3h)
+        except:
+            t3h = avg_temp
+        try:
+            humidity = float(humidity)
+        except:
+            humidity = 60
+
         heat_index = calculate_heat_index(t3h, humidity)
 
+        # 🔮 모델 입력값 정비
         input_df = pd.DataFrame([{
             "최고체감온도(°C)": heat_index,
             "최고기온(°C)": tmax,
@@ -191,7 +208,7 @@ if predict:
             st.metric("최저기온", f"{tmin}℃" if tmin is not None else "-℃")
             st.metric("평균기온", f"{avg_temp}℃" if avg_temp is not None else "-℃")
             st.metric("습도", f"{humidity}%")
-            st.metric("체감온도", f"{heat_index}℃")
+            st.metric("체감온도", f"{heat_index}℃" if heat_index is not None else "-℃")
 
             st.markdown("### 💡 온열질환자 예측")
             st.metric("예측 온열질환자 수", f"{pred:.2f}명")
