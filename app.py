@@ -2,16 +2,13 @@ import streamlit as st
 import pandas as pd
 import joblib
 import datetime
-import folium
-from folium.plugins import HeatMap
-from streamlit_folium import st_folium
 from urllib.parse import unquote
 import requests
 import math
+import matplotlib.pyplot as plt
 
 st.set_page_config(layout="wide")
 
-# 스타일 테마 적용 (Toss 감성)
 st.markdown("""
     <style>
         html, body, [class*="css"]  {
@@ -125,17 +122,19 @@ def get_weather_from_api(region_name):
     return {"max_temp": max_temp, "min_temp": min_temp, "humidity": hum, "wind": wind, "avg_temp": temp, "max_feel": round(feel, 1)}
 
 def get_risk_level(pred):
-    if pred == 0: return "<span class='risk-box verylow'>🟢 매우 낮음</span>"
-    elif pred <= 2: return "<span class='risk-box low'>🟡 낮음</span>"
-    elif pred <= 5: return "<span class='risk-box medium'>🟠 보통</span>"
-    elif pred <= 10: return "<span class='risk-box high'>🔴 높음</span>"
-    else: return "<span class='risk-box veryhigh'>🔥 매우 높음</span>"
+    if pred == 0: return "<span class='risk-box verylow'>🟢 매우 낮음</span>", "✔️ 평소처럼 생활하되 충분한 수분 섭취를 유지하세요."
+    elif pred <= 2: return "<span class='risk-box low'>🟡 낮음</span>", "🔅 직사광선 피하고 정오 전후 실내 생활을 권장합니다."
+    elif pred <= 5: return "<span class='risk-box medium'>🟠 보통</span>", "🚨 수시로 물을 마시고 노약자 외출은 자제하세요."
+    elif pred <= 10: return "<span class='risk-box high'>🔴 높음</span>", "❗ 실외 활동 최소화 및 냉방기 점검 필요."
+    else: return "<span class='risk-box veryhigh'>🔥 매우 높음</span>", "⚠️ 외출 금지, 커뮤니티와 연락 유지 및 냉방시설 우선 이용!"
 
-st.markdown("## 📍 전국 HeatMap & 지역별 예측")
+st.markdown("## 🧠 지역별 온열질환 예측")
 
-heat_data, risk_labels, prediction_results = [], {}, {}
-for region, (lat, lon) in region_to_latlon.items():
-    weather = get_weather_from_api(region)
+selected = st.selectbox("지역 선택", list(region_to_latlon.keys()))
+date_selected = st.date_input("예측 날짜 선택", value=datetime.date.today(), min_value=datetime.date.today(), max_value=datetime.date.today() + datetime.timedelta(days=5))
+
+if st.button("📊 예측 실행"):
+    weather = get_weather_from_api(selected)
     if weather:
         input_df = pd.DataFrame([{
             "최고체감온도(°C)": weather["max_feel"],
@@ -145,33 +144,28 @@ for region, (lat, lon) in region_to_latlon.items():
             "평균상대습도(%)": weather["humidity"]
         }])
         pred = model.predict(input_df)[0]
-        heat_data.append([lat, lon, pred])
-        prediction_results[region] = pred
-        risk_labels[region] = get_risk_level(pred)
+        risk, guide = get_risk_level(pred)
 
-center_lat = sum(v[0] for v in region_to_latlon.values()) / len(region_to_latlon)
-center_lon = sum(v[1] for v in region_to_latlon.values()) / len(region_to_latlon)
-m = folium.Map(location=[center_lat, center_lon], zoom_start=6)
-HeatMap(heat_data, radius=25).add_to(m)
-for region, (lat, lon) in region_to_latlon.items():
-    pred = prediction_results.get(region, 0)
-    label = risk_labels.get(region, '')
-    folium.Marker([lat, lon], tooltip=f"{region}\n예측: {pred:.1f}명").add_to(m)
+        st.markdown(f"""
+        <div class='card'>
+            <h4 style='margin-top:0;'>📊 {selected} ({date_selected.strftime('%Y-%m-%d')})</h4>
+            <div style='font-size:2.5rem;font-weight:600;'>{pred:.1f}명</div>
+            <div style='margin-top:0.5rem;'>{risk}</div>
+            <p style='margin-top:1rem;font-size:0.95rem;'>{guide}</p>
+        </div>
+        """, unsafe_allow_html=True)
 
-with st.container():
-    st_folium(m, width=1100, height=550)
+        # 예측 히스토리 차트 (예시 데이터)
+        st.markdown("### 📈 최근 예측 히스토리 (예시)")
+        dates = [(date_selected - datetime.timedelta(days=i)).strftime("%m/%d") for i in range(4, -1, -1)]
+        preds = [3.1, 4.5, 6.0, 7.2, pred]  # 실제 구현 시 session_state 또는 DB로 관리
 
-st.markdown("---")
-st.markdown("## 🧠 지역별 상세 위험 예측")
-selected = st.selectbox("지역 선택", list(region_to_latlon.keys()))
-pred = prediction_results.get(selected)
-risk = risk_labels.get(selected)
-
-if pred is not None:
-    st.markdown(f"""
-    <div class='card'>
-        <h4 style='margin-top:0;'>📊 {selected} 예측 결과</h4>
-        <div style='font-size:2.5rem;font-weight:600;'>{pred:.1f}명</div>
-        <div style='margin-top:0.5rem;'>{risk}</div>
-    </div>
-    """, unsafe_allow_html=True)
+        fig, ax = plt.subplots()
+        ax.plot(dates, preds, marker='o', color='#0061f2', linewidth=2)
+        ax.set_xlabel("날짜")
+        ax.set_ylabel("예측 환자 수")
+        ax.set_title("최근 5일 예측 추이")
+        ax.grid(True)
+        st.pyplot(fig)
+    else:
+        st.error("기상청 API에서 데이터를 불러올 수 없습니다.")
