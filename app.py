@@ -155,7 +155,7 @@ region_to_latlon = {
 }
 
 # ----------- HEADER UI -----------
-st.caption("폭염에 따른 온열질환 발생 예측 플랫폼")
+st.caption("광역자치단체별 온열질환 위험도 예측 AI 모델")
 
 c1, c2, c3 = st.columns([2, 2, 1])
 with c1:
