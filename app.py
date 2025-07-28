@@ -112,7 +112,6 @@ def get_weather_from_api(region_name):
         return None
 
     df = pd.DataFrame(items)
-
     if df.empty or "category" not in df.columns or "fcstValue" not in df.columns:
         st.error("예보 데이터를 찾을 수 없습니다.")
         return None
@@ -122,20 +121,23 @@ def get_weather_from_api(region_name):
     df["hour_diff"] = abs(df["fcstHour"] - now_hour)
     latest = df[df["category"].isin(["TMX", "TMN", "REH", "WSD", "T3H"])]
     closest = latest.loc[latest.groupby("category")["hour_diff"].idxmin()]
-
-    available = closest["category"].values
-    if "T3H" not in available:
-        st.warning("T3H 항목 누락 - 평균기온은 최고/최저기온 평균으로 자동 계산됩니다.")
-
     closest = closest.set_index("category")
+
     temp = float(closest.loc["T3H"]["fcstValue"]) if "T3H" in closest.index else None
-    wind = float(closest.loc["WSD"]["fcstValue"])
-    max_temp = float(closest.loc["TMX"]["fcstValue"])
-    min_temp = float(closest.loc["TMN"]["fcstValue"])
-    hum = float(closest.loc["REH"]["fcstValue"])
+    wind = float(closest.loc["WSD"]["fcstValue"]) if "WSD" in closest.index else None
+    max_temp = float(closest.loc["TMX"]["fcstValue"]) if "TMX" in closest.index else None
+    min_temp = float(closest.loc["TMN"]["fcstValue"]) if "TMN" in closest.index else None
+    hum = float(closest.loc["REH"]["fcstValue"]) if "REH" in closest.index else None
 
     if temp is None:
-        temp = round((max_temp + min_temp) / 2, 1)
+        if max_temp is not None and min_temp is not None:
+            temp = round((max_temp + min_temp) / 2, 1)
+        else:
+            st.error("평균 기온을 계산할 수 없습니다. 입력값을 확인해 주세요.")
+            return None
+
+    if wind is None:
+        wind = 1.5  # 기본값 대입
 
     feel = calculate_feels_like(temp, wind)
 
