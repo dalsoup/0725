@@ -5,7 +5,6 @@ import joblib
 import requests
 import math
 from urllib.parse import unquote
-import matplotlib.pyplot as plt
 
 # ----------- STYLE -----------
 st.set_page_config(layout="centered")
@@ -63,6 +62,7 @@ features = joblib.load("feature_names.pkl")
 KMA_API_KEY = unquote(st.secrets["KMA"]["API_KEY"])
 
 # ----------- FUNCTIONS -----------
+
 def get_risk_level(pred):
     if pred == 0: return "🟢 매우 낮음"
     elif pred <= 2: return "🟡 낮음"
@@ -90,25 +90,20 @@ def convert_latlon_to_xy(lat, lon):
     y = ro - ra * math.cos(theta) + YO + 0.5
     return int(x), int(y)
 
-def get_latest_base_time():
+def get_latest_base_date_time():
     now = datetime.datetime.now()
     hour = now.hour
-    if hour < 2: return "2300"
-    elif hour < 5: return "0200"
-    elif hour < 8: return "0500"
-    elif hour < 11: return "0800"
-    elif hour < 14: return "1100"
-    elif hour < 17: return "1400"
-    elif hour < 20: return "1700"
-    elif hour < 23: return "2000"
-    else: return "2300"
+    slots = [2, 5, 8, 11, 14, 17, 20, 23]
+    for t in reversed(slots):
+        if hour >= t:
+            return now.strftime("%Y%m%d"), f"{t:02}00"
+    return (now - datetime.timedelta(days=1)).strftime("%Y%m%d"), "2300"
 
 def get_weather_from_api(region_name, target_date):
     latlon = region_to_latlon.get(region_name, (37.5665, 126.9780))
     nx, ny = convert_latlon_to_xy(*latlon)
 
-    base_date = (target_date - datetime.timedelta(days=1)).strftime("%Y%m%d")
-    base_time = get_latest_base_time()
+    base_date, base_time = get_latest_base_date_time()
 
     params = {
         "serviceKey": KMA_API_KEY,
@@ -123,13 +118,14 @@ def get_weather_from_api(region_name, target_date):
         df = pd.DataFrame(items)
         df = df[df["category"].isin(["TMX", "TMN", "REH", "WSD"])]
         df = df[df["fcstDate"] == target_date.strftime("%Y%m%d")]
+
         summary = {}
         for cat in ["TMX", "TMN", "REH", "WSD"]:
             values = df[df["category"] == cat]["fcstValue"].astype(float)
             if not values.empty:
                 summary[cat] = values.mean() if cat == "REH" else values.iloc[0]
         return summary
-    except Exception as e:
+    except:
         return {}
 
 def calculate_avg_temp(tmx, tmn):
@@ -137,7 +133,7 @@ def calculate_avg_temp(tmx, tmn):
         return round((tmx + tmn) / 2, 1)
     return None
 
-# ----------- UI -----------
+# ----------- UI START -----------
 
 region_to_latlon = {
     "서울특별시": (37.5665, 126.9780), "부산광역시": (35.1796, 129.0756), "대구광역시": (35.8722, 128.6025),
