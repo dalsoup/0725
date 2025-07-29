@@ -2,16 +2,6 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from datetime import datetime
-import joblib
-import matplotlib.pyplot as plt
-
-# ---------- SHAP 및 XGBoost 모듈 체크 ----------
-shap_enabled = True
-try:
-    import shap
-    import xgboost
-except ImportError:
-    shap_enabled = False
 
 # ---------- 앱 설정 ----------
 st.set_page_config(page_title="Heatwave Risk Dashboard", page_icon="🔥", layout="wide")
@@ -55,23 +45,3 @@ if selected_date:
             <li><strong>2024년 환자수:</strong> {int(report['2024 실제 환자수'])}명</li>
         </ul>
     """, unsafe_allow_html=True)
-
-    # ---------- SHAP 분석 ----------
-    if shap_enabled:
-        st.markdown("#### 🧪 AI 판단 근거 (SHAP 분석)")
-        try:
-            model = joblib.load("trained_model.pkl")
-            X = pd.read_excel("모델 입력용 데이터.xlsx")
-            X_features = X.drop(columns=["date"])
-            target_index = X[X["date"] == selected_date].index[0]
-
-            explainer = shap.Explainer(model)
-            shap_values = explainer(X_features)
-
-            fig, ax = plt.subplots()
-            shap.plots.bar(shap_values[target_index], show=False)
-            st.pyplot(fig)
-        except Exception as e:
-            st.error(f"SHAP 분석 중 오류 발생: {e}")
-    else:
-        st.warning("⚠️ SHAP 또는 xgboost 모듈이 설치되어 있지 않아 AI 판단 근거 시각화가 비활성화되었습니다.")
