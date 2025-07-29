@@ -34,7 +34,7 @@ baseline_df = load_baseline_data()
 
 # 🔹 UI
 st.title("🔥 폭염 위험도 예측 대시보드")
-st.caption("2025년 7월 24일 ~ 28일 중 날짜와 시간 선택 시, 기상정보 기반으로 AI가 폭염 위험도를 예측하고 2024년 대비 환자수 증감도 제공합니다.")
+st.caption("날짜와 시간 선택 시, 기상정보 기반으로 AI가 폭염 위험도를 예측합니다.")
 
 col1, col2, col3 = st.columns(3)
 with col1:
@@ -44,7 +44,7 @@ with col2:
     selected_day = int(date_selected[-2:])
 with col3:
     available_hours = sorted(temp_df[temp_df["day"] == selected_day]["hour"].unique())
-    hour_options = [f"{int(h):02}:00" for h in available_hours]
+    hour_options = [f"{int(h)//100:02}:00" for h in available_hours]
     time_selected = st.selectbox("시간 선택", hour_options)
     selected_hour = int(time_selected.split(":")[0]) * 100
 
