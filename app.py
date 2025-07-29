@@ -34,7 +34,7 @@ baseline_df = load_baseline_data()
 
 # 🔹 UI
 st.title("🔥 폭염 위험도 예측 대시보드")
-st.caption("날짜와 시간 선택 시, 기상정보 기반으로 AI가 폭염 위험도를 예측합니다.")
+st.caption("기상청 단기예보를 기반으로 AI가 폭염 위험도를 예측합니다.")
 
 col1, col2, col3 = st.columns(3)
 with col1:
