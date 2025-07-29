@@ -1,65 +1,58 @@
 
 import streamlit as st
 import pandas as pd
-import numpy as np
-import datetime
-from sklearn.ensemble import RandomForestRegressor
+import calendar
 
-# 엑셀 데이터 로드
-weather_df = pd.read_excel("모델 입력용 데이터.xlsx")
-weather_df["date"] = pd.to_datetime(weather_df["date"])
+# 데이터 불러오기
+df = pd.read_excel("최종리포트데이터.xlsx")
+df["date"] = pd.to_datetime(df["date"])
+df["day"] = df["date"].dt.day
+df["month_day"] = df["date"].dt.strftime("%m-%d")
 
-# 모델 학습 함수 (캐시 적용)
-@st.cache_resource
-def load_model(data):
-    model = RandomForestRegressor(random_state=42)
-    X = data[['최고체감온도(°C)', '최고기온(°C)', '평균기온(°C)', '최저기온(°C)', '평균상대습도(%)']]
-    y = np.random.poisson(5, size=len(X))  # 실제 라벨이 있다면 이 부분을 교체
-    model.fit(X, y)
-    return model
+# 위험도 색상 매핑
+def get_color(risk):
+    return {
+        "🟢 매우 낮음": "#d4f4fa",
+        "🟡 낮음": "#fef3c7",
+        "🟠 보통": "#fdba74",
+        "🔴 높음": "#f87171",
+        "🔥 매우 높음": "#e11d48"
+    }.get(risk, "#e5e7eb")
 
-# 모델 로딩
-model = load_model(weather_df)
+# Streamlit 설정
+st.set_page_config(layout="wide")
+st.title("🔥 AI 폭염위험지수 리포트 대시보드")
 
-# 페이지 설정
-st.set_page_config(page_title="온열질환 예측 대시보드", layout="centered")
-st.title("🔥 온열질환 예측 대시보드")
-st.write("2025년 7월 · 청운효자동 기준")
+st.markdown("### 📆 2025년 7월 위험도 히트맵")
 
-# 날짜 선택 UI
-selected_date = st.date_input("날짜 선택", value=datetime.date(2025, 7, 1),
-                              min_value=datetime.date(2025, 7, 1),
-                              max_value=datetime.date(2025, 7, 28))
+selected_date = None
+calendar.setfirstweekday(calendar.SUNDAY)
 
-# 해당 날짜의 데이터 추출
-row = weather_df[weather_df["date"] == pd.to_datetime(selected_date)]
+# 달력 그리기
+for week in calendar.Calendar().monthdayscalendar(2025, 7):
+    cols = st.columns(7)
+    for i, day in enumerate(week):
+        if day == 0:
+            cols[i].empty()
+        else:
+            date_str = f"2025-07-{day:02d}"
+            row = df[df["date"] == date_str]
+            if not row.empty:
+                risk = row.iloc[0]["예측 위험도"]
+                color = get_color(risk)
+                if cols[i].button(f"{day}\n{risk}", key=date_str):
+                    selected_date = date_str
+                cols[i].markdown(f"<div style='background:{color};border-radius:6px;padding:8px;text-align:center;color:black;font-weight:bold'>{day}<br>{risk}</div>", unsafe_allow_html=True)
 
-if row.empty:
-    st.error("선택한 날짜의 기상 데이터가 없습니다.")
-else:
-    input_data = row[['최고체감온도(°C)', '최고기온(°C)', '평균기온(°C)', '최저기온(°C)', '평균상대습도(%)']]
-    pred = model.predict(input_data)[0]
+# 리포트 표시
+if selected_date:
+    st.markdown("---")
+    st.subheader(f"📄 {selected_date} 리포트")
+    row = df[df["date"] == selected_date].iloc[0]
 
-    def get_risk_level(val):
-        if val == 0: return "🟢 매우 낮음"
-        elif val <= 2: return "🟡 낮음"
-        elif val <= 5: return "🟠 보통"
-        elif val <= 10: return "🔴 높음"
-        else: return "🔥 매우 높음"
-
-    risk = get_risk_level(pred)
-
-    st.subheader("예측 결과")
-    st.metric("예측 환자 수", f"{pred:.2f}명")
-    st.metric("위험 등급", risk)
-
-    if "🔥" in risk:
-        st.warning("🚨 매우 높음: 외출 자제 및 냉방기기 사용 권고")
-    elif "🔴" in risk:
-        st.info("🔴 높음: 노약자 야외활동 주의")
-    elif "🟠" in risk:
-        st.info("🟠 보통: 충분한 수분 섭취 필요")
-    elif "🟡" in risk:
-        st.success("🟡 낮음: 무리한 야외활동 자제")
-    else:
-        st.success("🟢 매우 낮음: 위험 없음")
+    st.markdown(f"""
+    - **기상 정보**: 최고기온 {row['최고기온(°C)']}℃ / 평균기온 {row['평균기온(°C)']}℃ / 습도 {row['습도(%)']:.1f}%
+    - **AI 예측 위험지수**: {row['예측 위험도']}
+    - **2025년 실제 환자수**: {int(row['2025 실제 환자수'])}명
+    - **2024년 환자수**: {int(row['2024 실제 환자수'])}명
+    """)
