@@ -103,8 +103,11 @@ def calculate_avg_temp(tmx, tmn):
 
 @st.cache_data
 def load_report():
-    df = pd.read_excel("\ucd5c\uc885\ub9ac\ud3ec\ud2b8\ub370\uc774\ud130.xlsx", parse_dates=["date"])
-    df["\uc608\ucc28 \ud658\uc790\uc218"] = pd.to_numeric(df["\uc608\ucc28 \ud658\uc790\uc218"], errors="coerce")
+    df = pd.read_excel("최종리포트데이터.xlsx", parse_dates=["date"])
+    try:
+        df["예측 환자수"] = pd.to_numeric(df["예측 환자수"], errors="coerce")
+    except KeyError:
+        st.error("❌ '예측 환자수' 컬럼이 없습니다.")
     return df
 
 # ---------------- UI ----------------
@@ -113,19 +116,19 @@ col1, col2 = st.columns(2)
 with col1:
     region = st.selectbox("📍 지역 선택", list(region_to_latlon.keys()))
 with col2:
-    date_selected = st.date_input("🗓 날짜 선택", value=datetime.date.today())
+    date_selected = st.date_input("📅 날짜 선택", value=datetime.date.today())
 
 report_df = load_report()
 today = datetime.date.today()
 
 if date_selected < today:
     row = report_df[report_df["date"] == pd.Timestamp(date_selected)].iloc[0]
-    risk = row["\uc608\ucc28 \uc704\ud5d8\ub3c4"]
+    risk = row["예측 위험도"]
     st.markdown(f"#### ✅ <b>{date_selected}</b> 리포트 (출처: 저장된 리포트)", unsafe_allow_html=True)
     st.markdown(f"""
     - 최고기온: {row['최고기온(°C)']}℃  
     - 평균기온: {row['평균기온(°C)']}℃  
-    - 순둥: {row['습도(%)']}%  
+    - 습도: {row['습도(%)']}%  
     - AI 예측 환자수: {row['예측 환자수']}명  
     - 위험도: {risk}  
     - 실제 환자수(2025): {row['2025 실제 환자수']}명  
@@ -134,7 +137,7 @@ if date_selected < today:
 else:
     weather = get_weather(region, date_selected)
     if not weather:
-        st.error("\u26a0\ufe0f \uae30상 정보를 \ubcf4내오지 \ubabb했습니다.")
+        st.error("⚠️ 기상 정보를 불러오지 못했습니다.")
     else:
         avg_temp = calculate_avg_temp(weather["TMX"], weather["TMN"])
         X = pd.DataFrame([{
@@ -150,7 +153,7 @@ else:
         st.markdown(f"""
         - 최고기온: {weather["TMX"]}℃  
         - 평균기온: {avg_temp}℃  
-        - 순둥: {weather["REH"]:.1f}%  
+        - 습도: {weather["REH"]:.1f}%  
         - AI 예측 환자수: {pred:.2f}명  
         - 위험도: {risk}  
         """)
