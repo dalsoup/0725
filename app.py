@@ -46,11 +46,11 @@ for week in calendar.Calendar().monthdayscalendar(2025, 7):
                 risk = row.iloc[0]["예측 위험도"]
                 color = get_color(risk)
                 with cols[i]:
-                    if st.button(" ", key=date_str, help=f"{day}일 클릭", use_container_width=True):
+                    if st.button(f" ", key=date_str, use_container_width=True):
                         selected_date = date_str
-                    st.markdown(f"<div style='margin-top:-50px;background:{color};border-radius:6px;padding:10px;text-align:center;color:black;font-weight:bold'>{day}<br>{risk}</div>", unsafe_allow_html=True)
+                    st.markdown(f"<div style='margin-top:-50px;background:{color};border-radius:6px;padding:20px 0;text-align:center;color:black;font-weight:bold;font-size:20px'>{day}</div>", unsafe_allow_html=True)
             else:
-                cols[i].markdown(f"<div style='background:#e5e7eb;border-radius:6px;padding:8px;text-align:center;color:gray'>{day}</div>", unsafe_allow_html=True)
+                cols[i].markdown(f"<div style='background:#e5e7eb;border-radius:6px;padding:20px 0;text-align:center;color:gray;font-weight:bold;font-size:20px'>{day}</div>", unsafe_allow_html=True)
 
 # ---------- 리포트 ----------
 if selected_date:
