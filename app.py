@@ -4,11 +4,14 @@ import numpy as np
 import calendar
 from datetime import datetime
 
-# ---------- 설정 ----------
-st.set_page_config(layout="wide")
-st.title("🔥 AI 폭염위험지수 리포트 대시보드")
+# ---------- 앱 설정 ----------
+st.set_page_config(page_title="Heatwave Risk Dashboard", page_icon="🔥", layout="wide")
+st.markdown("""
+    <h1 style='font-size: 2.5rem; font-weight: 700; margin-bottom: 10px;'>🔥 2025년 Heatwave Risk Calendar</h1>
+    <p style='color: gray; font-size: 1.1rem;'>예측 위험도에 따라 날짜를 선택하고 리포트를 확인하세요.</p>
+""", unsafe_allow_html=True)
 
-# ---------- 실제 데이터 로드 및 위험도 계산 ----------
+# ---------- 데이터 로드 및 위험도 계산 ----------
 @st.cache_data
 def load_data():
     df = pd.read_excel("최종리포트데이터.xlsx", parse_dates=["date"])
@@ -31,9 +34,21 @@ def get_color(risk):
     }.get(risk, "#e5e7eb")
 
 # ---------- 날짜 박스 그리드 ----------
-st.markdown("### 📆 2025년 7월 위험도 히트맵")
+st.markdown("""
+<style>
+    .date-box {
+        border-radius: 10px;
+        padding: 24px 0;
+        font-weight: bold;
+        font-size: 22px;
+        text-align: center;
+        margin-bottom: 6px;
+        cursor: pointer;
+    }
+</style>
+""", unsafe_allow_html=True)
+
 selected_date = None
-cols = st.columns(7)
 for week in calendar.Calendar().monthdayscalendar(2025, 7):
     cols = st.columns(7)
     for i, day in enumerate(week):
@@ -46,20 +61,24 @@ for week in calendar.Calendar().monthdayscalendar(2025, 7):
                 risk = row.iloc[0]["예측 위험도"]
                 color = get_color(risk)
                 with cols[i]:
-                    if st.button(f" ", key=date_str, use_container_width=True):
+                    if st.button(" ", key=date_str, use_container_width=True):
                         selected_date = date_str
-                    st.markdown(f"<div style='margin-top:-50px;background:{color};border-radius:6px;padding:20px 0;text-align:center;color:black;font-weight:bold;font-size:20px'>{day}</div>", unsafe_allow_html=True)
+                    st.markdown(
+                        f"<div class='date-box' style='background:{color};'>{day}</div>",
+                        unsafe_allow_html=True)
             else:
-                cols[i].markdown(f"<div style='background:#e5e7eb;border-radius:6px;padding:20px 0;text-align:center;color:gray;font-weight:bold;font-size:20px'>{day}</div>", unsafe_allow_html=True)
+                cols[i].markdown(f"<div class='date-box' style='background:#e5e7eb;color:gray'>{day}</div>", unsafe_allow_html=True)
 
 # ---------- 리포트 ----------
 if selected_date:
     report = data[data.date == selected_date].iloc[0]
     st.markdown("---")
-    st.subheader(f"📄 {selected_date} 리포트")
     st.markdown(f"""
-    - **기상 정보**: 최고기온 {report['최고기온(°C)']:.1f}℃ / 평균기온 {report['평균기온(°C)']:.1f}℃ / 습도 {report['습도(%)']:.1f}%
-    - **AI 예측 위험지수**: {report['예측 위험도']}
-    - **2025년 실제 환자수**: {int(report['2025 실제 환자수'])}명
-    - **2024년 환자수**: {int(report['2024 실제 환자수'])}명
-    """)
+        <h2 style='margin-top: 10px;'>📅 {selected_date} 리포트</h2>
+        <ul style='font-size: 1.1rem;'>
+            <li><strong>기상 정보:</strong> 최고기온 {report['최고기온(°C)']:.1f}℃ / 평균기온 {report['평균기온(°C)']:.1f}℃ / 습도 {report['습도(%)']:.1f}%</li>
+            <li><strong>AI 예측 위험지수:</strong> {report['예측 위험도']}</li>
+            <li><strong>2025년 실제 환자수:</strong> {int(report['2025 실제 환자수'])}명</li>
+            <li><strong>2024년 환자수:</strong> {int(report['2024 실제 환자수'])}명</li>
+        </ul>
+    """, unsafe_allow_html=True)
