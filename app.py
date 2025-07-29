@@ -12,7 +12,7 @@ st.markdown("""
             font-family: 'Pretendard', sans-serif;
         }
     </style>
-    <h1 style='font-size: 2.5rem; font-weight: 700; margin-bottom: 10px;'> Heatwave Risk Dashboard</h1>
+    <h1 style='font-size: 2.5rem; font-weight: 700; margin-bottom: 10px;'> AI Heatwave Risk Dashboard</h1>
     <p style='color: gray; font-size: 1.1rem;'>기상청 단기예보와 질병관리청 데이터를 기반한 AI 폭염 위험분석 플랫폼입니다.</p>
 """, unsafe_allow_html=True)
 
