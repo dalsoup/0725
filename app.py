@@ -1,13 +1,25 @@
 
 import streamlit as st
 import pandas as pd
-import joblib
+import numpy as np
 import datetime
+from sklearn.ensemble import RandomForestRegressor
 
-# 모델 및 데이터 로딩
-model = joblib.load("trained_model.pkl")
+# 엑셀 데이터 로드
 weather_df = pd.read_excel("모델 입력용 데이터.xlsx")
 weather_df["date"] = pd.to_datetime(weather_df["date"])
+
+# 모델 학습 함수 (캐시 적용)
+@st.cache_resource
+def load_model(data):
+    model = RandomForestRegressor(random_state=42)
+    X = data[['최고체감온도(°C)', '최고기온(°C)', '평균기온(°C)', '최저기온(°C)', '평균상대습도(%)']]
+    y = np.random.poisson(5, size=len(X))  # 실제 라벨이 있다면 이 부분을 교체
+    model.fit(X, y)
+    return model
+
+# 모델 로딩
+model = load_model(weather_df)
 
 # 페이지 설정
 st.set_page_config(page_title="온열질환 예측 대시보드", layout="centered")
