@@ -4,7 +4,7 @@ import numpy as np
 from datetime import datetime
 
 # ---------- 앱 설정 ----------
-st.set_page_config(page_title="Heatwave Risk Dashboard", page_icon="🔥", layout="wide")
+st.set_page_config(page_title="AI Heatwave Risk Dashboard", page_icon="🔥", layout="wide")
 st.markdown("""
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Pretendard&display=swap');
