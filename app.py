@@ -8,19 +8,21 @@ from datetime import datetime
 st.set_page_config(layout="wide")
 st.title("🔥 AI 폭염위험지수 리포트 대시보드")
 
-# ---------- 날짜 정보 ----------
-dates = pd.date_range("2025-07-01", "2025-07-31")
+# ---------- 예시 데이터 (캐시로 고정) ----------
+@st.cache_data
+def load_data():
+    dates = pd.date_range("2025-07-01", "2025-07-31")
+    return pd.DataFrame({
+        "date": dates,
+        "예측 위험도": np.random.choice(["🟢 매우 낮음", "🟡 낮음", "🟠 보통", "🔴 높음", "🔥 매우 높음"], size=31),
+        "2025 실제 환자수": np.random.poisson(4, size=31),
+        "2024 실제 환자수": np.random.poisson(2, size=31),
+        "최고기온(°C)": np.random.normal(33, 2, size=31),
+        "평균기온(°C)": np.random.normal(30, 2, size=31),
+        "습도(%)": np.random.uniform(40, 80, size=31),
+    })
 
-# ---------- 예시 데이터 (실제는 모델 예측값과 병합된 테이블로 대체) ----------
-data = pd.DataFrame({
-    "date": dates,
-    "예측 위험도": np.random.choice(["🟢 매우 낮음", "🟡 낮음", "🟠 보통", "🔴 높음", "🔥 매우 높음"], size=31),
-    "2025 실제 환자수": np.random.poisson(4, size=31),
-    "2024 실제 환자수": np.random.poisson(2, size=31),
-    "최고기온(°C)": np.random.normal(33, 2, size=31),
-    "평균기온(°C)": np.random.normal(30, 2, size=31),
-    "습도(%)": np.random.uniform(40, 80, size=31),
-})
+data = load_data()
 
 # ---------- 컬러 매핑 ----------
 def get_color(risk):
