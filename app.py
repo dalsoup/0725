@@ -12,7 +12,7 @@ st.markdown("""
             font-family: 'Pretendard', sans-serif;
         }
     </style>
-    <h1 style='font-size: 2.5rem; font-weight: 700; margin-bottom: 10px;'>🔥 2025년 Heatwave Risk Dashboard</h1>
+    <h1 style='font-size: 2.5rem; font-weight: 700; margin-bottom: 10px;'> Heatwave Risk Dashboard</h1>
     <p style='color: gray; font-size: 1.1rem;'>기상청 단기예보와 질병관리청 데이터를 기반한 AI 폭염 위험분석 플랫폼입니다.</p>
 """, unsafe_allow_html=True)
 
@@ -37,7 +37,7 @@ if selected_date:
     report = data[data.date == selected_date].iloc[0]
     st.markdown("---")
     st.markdown(f"""
-        <h2 style='margin-top: 10px;'>📅 {selected_date} 리포트</h2>
+        <h2 style='margin-top: 10px;'> {selected_date} 리포트</h2>
         <ul style='font-size: 1.1rem;'>
             <li><strong>기상 정보:</strong> 최고기온 {report['최고기온(°C)']:.1f}℃ / 평균기온 {report['평균기온(°C)']:.1f}℃ / 습도 {report['습도(%)']:.1f}%</li>
             <li><strong>AI 예측 위험지수:</strong> {report['예측 위험도']}</li>
