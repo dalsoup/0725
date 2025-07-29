@@ -1,10 +1,7 @@
-streamlit
 pandas
-scikit-learn
-joblib
-openpyxl
-folium
-streamlit-folium
+numpy
 matplotlib
-shap
 xgboost
+shap
+openpyxl
+streamlit
