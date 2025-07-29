@@ -7,7 +7,7 @@ from datetime import datetime
 st.set_page_config(page_title="Heatwave Risk Dashboard", page_icon="🔥", layout="wide")
 st.markdown("""
     <h1 style='font-size: 2.5rem; font-weight: 700; margin-bottom: 10px;'>🔥 2025년 Heatwave Risk Dashboard</h1>
-    <p style='color: gray; font-size: 1.1rem;'>예측 위험도에 따라 날짜를 선택하고 리포트를 확인하세요.</p>
+    <p style='color: gray; font-size: 1.1rem;'>날짜에 따른 폭염 예측 리포트를 확인하세요.</p>
 """, unsafe_allow_html=True)
 
 # ---------- 데이터 로드 및 위험도 계산 ----------
