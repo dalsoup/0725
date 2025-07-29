@@ -6,8 +6,14 @@ from datetime import datetime
 # ---------- 앱 설정 ----------
 st.set_page_config(page_title="Heatwave Risk Dashboard", page_icon="🔥", layout="wide")
 st.markdown("""
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Pretendard&display=swap');
+        html, body, [class*="css"]  {
+            font-family: 'Pretendard', sans-serif;
+        }
+    </style>
     <h1 style='font-size: 2.5rem; font-weight: 700; margin-bottom: 10px;'>🔥 2025년 Heatwave Risk Dashboard</h1>
-    <p style='color: gray; font-size: 1.1rem;'>날짜에 따른 폭염 예측 리포트를 확인하세요.</p>
+    <p style='color: gray; font-size: 1.1rem;'>기상청 단기예보와 질병관리청 데이터를 기반한 AI 폭염 위험분석 플랫폼입니다.</p>
 """, unsafe_allow_html=True)
 
 # ---------- 데이터 로드 및 위험도 계산 ----------
