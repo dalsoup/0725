@@ -7,19 +7,17 @@ import joblib
 model = joblib.load("trained_model.pkl")
 features = joblib.load("feature_names.pkl")
 
-# 🔹 컬럼 정리 함수
-def clean_columns(df):
-    df.columns = ["day", "hour", "forecast", "value"]
-    return df
-
-# 🔹 엑셀 불러오기
+# 🔹 CSV 불러오기
 @st.cache_data
-def load_excel_data():
-    temp_df = clean_columns(pd.read_excel("서울_1시간 기온.xlsx"))
-    reh_df = clean_columns(pd.read_excel("서울_습도.xlsx"))
-    tmx_df = clean_columns(pd.read_excel("서울_일최고기온.xlsx"))
-    tmn_df = clean_columns(pd.read_excel("서울_일최저기온.xlsx"))
-    wind_df = clean_columns(pd.read_excel("서울_풍속.xlsx"))
+def load_data():
+    def clean(df):
+        df.columns = ["day", "hour", "forecast", "value"]
+        return df
+    temp_df = clean(pd.read_csv("청운효자동_1시간기온_20250701_20250728.csv"))
+    reh_df = clean(pd.read_csv("청운효자동_습도_20250701_20250728.csv"))
+    tmx_df = clean(pd.read_csv("청운효자동_일최고기온_20250701_20250728.csv"))
+    tmn_df = clean(pd.read_csv("청운효자동_일최저기온_20250701_20250728.csv"))
+    wind_df = clean(pd.read_csv("청운효자동_풍속_20250701_20250728.csv"))
     return temp_df, reh_df, tmx_df, tmn_df, wind_df
 
 # 🔹 전년도 온열질환자 수 로드
@@ -27,34 +25,31 @@ def load_excel_data():
 def load_baseline_data():
     df = pd.read_excel("ML_7_8월_2021_2025_dataset.xlsx")
     df["일시"] = pd.to_datetime(df["일시"])
-    return df[df["광역자치단체"] == "서울"]
+    return df[df["광역자치단체"] == "서울"]  # 또는 청운효자동 해당 구역으로 수정 가능
 
-temp_df, reh_df, tmx_df, tmn_df, wind_df = load_excel_data()
+temp_df, reh_df, tmx_df, tmn_df, wind_df = load_data()
 baseline_df = load_baseline_data()
 
 # 🔹 UI
 st.title("🔥 폭염 위험도 예측 대시보드")
-st.caption("기상청 단기예보를 기반으로 AI가 폭염 위험도를 예측합니다.")
+st.caption("2025년 7월 1일 ~ 28일 사이 청운효자동의 기상데이터를 기반으로 AI가 폭염 위험도를 예측하고, 전년도 환자수와 비교합니다.")
 
-col1, col2, col3 = st.columns(3)
+col1, col2 = st.columns(2)
 with col1:
-    region = st.selectbox("지역", ["서울특별시"], index=0)
+    date_selected = st.selectbox("날짜 선택", sorted(temp_df["day"].unique()))
 with col2:
-    date_selected = st.selectbox("날짜 선택", ["2025-07-24", "2025-07-25", "2025-07-26", "2025-07-27", "2025-07-28"])
-    selected_day = int(date_selected[-2:])
-with col3:
-    available_hours = sorted(temp_df[temp_df["day"] == selected_day]["hour"].unique())
-    hour_options = [f"{int(h)//100:02}:00" for h in available_hours]
+    hours = sorted(temp_df[temp_df["day"] == date_selected]["hour"].unique())
+    hour_options = [f"{int(h)//100:02}:00" for h in hours]
     time_selected = st.selectbox("시간 선택", hour_options)
-    selected_hour = int(time_selected.split(":")[0]) * 100
+    selected_hour = int(time_selected.split(":")[0]) * 100 if time_selected else None
 
-if st.button("🔍 폭염 위험도 조회"):
+if st.button("🔍 폭염 위험도 조회") and selected_hour is not None:
     try:
-        t_avg = temp_df[(temp_df["day"] == selected_day) & (temp_df["hour"] == selected_hour)]["value"].values[0]
-        humidity = reh_df[(reh_df["day"] == selected_day) & (reh_df["hour"] == selected_hour)]["value"].values[0]
-        wind = wind_df[(wind_df["day"] == selected_day) & (wind_df["hour"] == selected_hour)]["value"].values[0]
-        t_max = tmx_df[tmx_df["day"] == selected_day]["value"].values[-1]
-        t_min = tmn_df[tmn_df["day"] == selected_day]["value"].values[-1]
+        t_avg = temp_df[(temp_df["day"] == date_selected) & (temp_df["hour"] == selected_hour)]["value"].values[0]
+        humidity = reh_df[(reh_df["day"] == date_selected) & (reh_df["hour"] == selected_hour)]["value"].values[0]
+        wind = wind_df[(wind_df["day"] == date_selected) & (wind_df["hour"] == selected_hour)]["value"].values[0]
+        t_max = tmx_df[tmx_df["day"] == date_selected]["value"].values[-1]
+        t_min = tmn_df[tmn_df["day"] == date_selected]["value"].values[-1]
 
         st.markdown("### ☁️ 실시간 기상 정보")
         st.markdown(f"- 평균기온: **{t_avg}℃**")
@@ -82,10 +77,13 @@ if st.button("🔍 폭염 위험도 조회"):
 
         risk = get_risk_level(pred)
 
+        # 🔸 전년도 환자 수 비교
+        month = 7  # 고정
+        day_num = int(str(date_selected)[-2:])
         prev = baseline_df[
             (baseline_df["연도"] == 2024) &
-            (baseline_df["월"] == 7) &
-            (baseline_df["일시"].dt.day == selected_day)
+            (baseline_df["월"] == month) &
+            (baseline_df["일시"].dt.day == day_num)
         ]["환자수"].values
         baseline = prev[0] if len(prev) > 0 else 0
         diff = pred - baseline
