@@ -2,6 +2,5 @@ pandas
 numpy
 matplotlib
 xgboost
-shap
 openpyxl
 streamlit
