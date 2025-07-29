@@ -1,10 +1,10 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+from datetime import datetime
 import shap
 import joblib
 import matplotlib.pyplot as plt
-from datetime import datetime
 
 # ---------- 앱 설정 ----------
 st.set_page_config(page_title="Heatwave Risk Dashboard", page_icon="🔥", layout="wide")
@@ -49,20 +49,20 @@ if selected_date:
         </ul>
     """, unsafe_allow_html=True)
 
-    # ---------- SHAP 설명 ----------
-    st.markdown("### 🤖 AI 판단 근거 (SHAP 분석)")
+    # ---------- SHAP 분석 ----------
+    st.markdown("#### 🧪 AI 판단 근거 (SHAP 분석)")
     try:
         model = joblib.load("trained_model.pkl")
-        shap_data = pd.read_excel("모델 입력용 데이터.xlsx")
-        X = shap_data.drop(columns=["date"])
+        X = pd.read_excel("모델 입력용 데이터.xlsx")
+        X_features = X.drop(columns=["date"])
+        target_index = X[X["date"] == selected_date].index[0]
+
         explainer = shap.Explainer(model)
-        shap_values = explainer(X)
-        row_index = shap_data[shap_data["date"] == selected_date].index[0]
+        shap_values = explainer(X_features)
 
         # 시각화
-        st.set_option('deprecation.showPyplotGlobalUse', False)
         fig, ax = plt.subplots()
-        shap.plots.bar(shap_values[row_index], max_display=10, show=False)
+        shap.plots.bar(shap_values[target_index], show=False)
         st.pyplot(fig)
     except Exception as e:
-        st.error(f"SHAP 분석을 표시하는 데 문제가 발생했습니다: {e}")
+        st.error(f"SHAP 분석 중 오류 발생: {e}")
