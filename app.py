@@ -147,6 +147,7 @@ else:
             "최저기온(°C)": weather["TMN"],
             "평균상대습도(%)": weather["REH"]
         }])
+        X = X[model.feature_names_in_]
         pred = model.predict(X)[0]
         risk = get_risk_level(pred)
         st.markdown(f"#### ⚡ <b>{date_selected}</b> 예측 결과 (출처: 실시간 예측)</b>", unsafe_allow_html=True)
