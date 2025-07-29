@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import joblib
@@ -29,8 +28,8 @@ def load_cleaned_data():
     return temp, reh, tmx, tmn, wind
 
 # 앱 시작
-st.title("🔥 청운효자동 폭염 위험도 예측 대시보드")
-st.caption("2025년 7월 1일 ~ 27일 기상 데이터를 기반으로 온열질환 위험도를 예측합니다.")
+st.title("폭염 위험도 예측 대시보드")
+st.caption("기상청 단기예보 데이터를 기반으로 온열질환 위험도를 예측합니다.")
 
 temp_df, reh_df, tmx_df, tmn_df, wind_df = load_cleaned_data()
 
