@@ -1,17 +1,18 @@
+
 import streamlit as st
 import pandas as pd
 import joblib
 
-# 모델 및 feature 목록 불러오기
+# 🔹 모델 및 피처 로드
 model = joblib.load("trained_model.pkl")
 features = joblib.load("feature_names.pkl")
 
-# 컬럼명 강제 정제 함수
+# 🔹 컬럼 정리 함수
 def clean_columns(df):
     df.columns = ["day", "hour", "forecast", "value"]
     return df
 
-# 엑셀 파일 불러오기
+# 🔹 엑셀 불러오기
 @st.cache_data
 def load_excel_data():
     temp_df = clean_columns(pd.read_excel("서울_1시간 기온.xlsx"))
@@ -21,25 +22,34 @@ def load_excel_data():
     wind_df = clean_columns(pd.read_excel("서울_풍속.xlsx"))
     return temp_df, reh_df, tmx_df, tmn_df, wind_df
 
-temp_df, reh_df, tmx_df, tmn_df, wind_df = load_excel_data()
+# 🔹 전년도 온열질환자 수 로드
+@st.cache_data
+def load_baseline_data():
+    df = pd.read_excel("ML_7_8월_2021_2025_dataset.xlsx")
+    df["일시"] = pd.to_datetime(df["일시"])
+    return df[df["광역자치단체"] == "서울"]
 
-# UI
+temp_df, reh_df, tmx_df, tmn_df, wind_df = load_excel_data()
+baseline_df = load_baseline_data()
+
+# 🔹 UI
 st.title("🔥 폭염 위험도 예측 대시보드")
-st.caption("2025년 7월 24일 ~ 28일 기간 중 날짜와 시간 선택 시 실시간 기상정보 기반으로 AI가 폭염 위험도를 예측합니다.")
+st.caption("2025년 7월 24일 ~ 28일 중 날짜와 시간 선택 시, 기상정보 기반으로 AI가 폭염 위험도를 예측하고 2024년 대비 환자수 증감도 제공합니다.")
 
 col1, col2, col3 = st.columns(3)
 with col1:
     region = st.selectbox("지역", ["서울특별시"], index=0)
 with col2:
     date_selected = st.selectbox("날짜 선택", ["2025-07-24", "2025-07-25", "2025-07-26", "2025-07-27", "2025-07-28"])
+    selected_day = int(date_selected[-2:])
 with col3:
-    time_selected = st.selectbox("시간 선택", [f"{h:02}:00" for h in range(24)])
+    available_hours = sorted(temp_df[temp_df["day"] == selected_day]["hour"].unique())
+    hour_options = [f"{int(h):02}:00" for h in available_hours]
+    time_selected = st.selectbox("시간 선택", hour_options)
+    selected_hour = int(time_selected.split(":")[0]) * 100
 
 if st.button("🔍 폭염 위험도 조회"):
     try:
-        selected_day = int(date_selected[-2:])
-        selected_hour = int(time_selected.split(":")[0]) * 100
-
         t_avg = temp_df[(temp_df["day"] == selected_day) & (temp_df["hour"] == selected_hour)]["value"].values[0]
         humidity = reh_df[(reh_df["day"] == selected_day) & (reh_df["hour"] == selected_hour)]["value"].values[0]
         wind = wind_df[(wind_df["day"] == selected_day) & (wind_df["hour"] == selected_hour)]["value"].values[0]
@@ -71,13 +81,20 @@ if st.button("🔍 폭염 위험도 조회"):
             else: return "🔥 매우 높음"
 
         risk = get_risk_level(pred)
-        baseline = 5.3
+
+        prev = baseline_df[
+            (baseline_df["연도"] == 2024) &
+            (baseline_df["월"] == 7) &
+            (baseline_df["일시"].dt.day == selected_day)
+        ]["환자수"].values
+        baseline = prev[0] if len(prev) > 0 else 0
         diff = pred - baseline
 
         st.markdown("### 🔥 예측된 폭염 위험도")
         st.markdown(f"**위험 등급:** {risk}")
-        st.markdown(f"**예상 온열질환자 수:** {pred:.2f}명")
-        st.markdown(f"**비교:** 하루 전보다 {'+' if diff >= 0 else ''}{diff:.2f}명")
+        st.markdown(f"**예상 온열질환자 수 (2025년):** {pred:.2f}명")
+        st.markdown(f"**전년도 같은 날(2024년) 실제 환자 수:** {baseline:.2f}명")
+        st.markdown(f"**전년도 대비 변화:** {'+' if diff >= 0 else ''}{diff:.2f}명")
 
     except Exception as e:
         st.error("❌ 선택하신 날짜 및 시간에 해당하는 데이터를 찾을 수 없습니다.")
