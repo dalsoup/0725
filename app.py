@@ -6,6 +6,17 @@ import requests
 import math
 from urllib.parse import unquote
 import os
+import base64
+
+st.set_page_config(layout="centered")
+model = joblib.load("trained_model.pkl")
+feature_names = joblib.load("feature_names.pkl")
+KMA_API_KEY = unquote(st.secrets["KMA"]["API_KEY"])
+ASOS_API_KEY = unquote(st.secrets["ASOS"]["API_KEY"])
+GITHUB_USERNAME = st.secrets["GITHUB"]["USERNAME"]
+GITHUB_REPO = st.secrets["GITHUB"]["REPO"]
+GITHUB_BRANCH = st.secrets["GITHUB"]["BRANCH"]
+GITHUB_TOKEN = st.secrets["GITHUB"]["TOKEN"]
 
 st.set_page_config(layout="centered")
 model = joblib.load("trained_model.pkl")
@@ -276,6 +287,43 @@ if st.button("조회하기"):
                     df = pd.DataFrame([input_row])
 
                 df.to_csv(csv_path, index=False, encoding="utf-8-sig")
+
+                try:
+                    # GitHub에 업로드
+                    with open(csv_path, "rb") as f:
+                        content = f.read()
+                    b64_content = base64.b64encode(content).decode("utf-8")
+                    api_url = f"https://api.github.com/repos/{GITHUB_USERNAME}/{GITHUB_REPO}/contents/{csv_path}"
+
+                    # 기존 파일 SHA 가져오기 (있으면 업데이트)
+                    r = requests.get(api_url, headers={"Authorization": f"Bearer {GITHUB_TOKEN}"})
+                    if r.status_code == 200:
+                        sha = r.json()["sha"]
+                    else:
+                        sha = None
+
+                    commit_msg = f"Update {csv_path} with new data for {ymd} {region}"
+                    payload = {
+                        "message": commit_msg,
+                        "content": b64_content,
+                        "branch": GITHUB_BRANCH
+                    }
+                    if sha:
+                        payload["sha"] = sha
+
+                    headers = {
+                        "Authorization": f"Bearer {GITHUB_TOKEN}",
+                        "Accept": "application/vnd.github+json"
+                    }
+                    r = requests.put(api_url, headers=headers, json=payload)
+
+                    if r.status_code in [200, 201]:
+                        st.success("✅ GitHub 저장 완료")
+                    else:
+                        st.warning(f"⚠️ GitHub 저장 실패: {r.status_code} {r.text[:200]}")
+
+                except Exception as e:
+                    st.error(f"❌ GitHub 업로드 중 오류: {e}")
 
             except Exception as e:
                 st.error(f"❌ 처리 중 오류 발생: {e}")
