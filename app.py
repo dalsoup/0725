@@ -5,13 +5,13 @@ import joblib
 import requests
 import math
 from urllib.parse import unquote
+import certifi  # ✅ SSL 인증서 번들
 
 st.set_page_config(layout="centered")
 model = joblib.load("trained_model.pkl")
 feature_names = joblib.load("feature_names.pkl")
 KMA_API_KEY = unquote(st.secrets["KMA"]["API_KEY"])
 
-# ✅ 발표 시간 결정 함수
 def get_best_available_base_datetime(target_date):
     now = datetime.datetime.now()
     today = now.date()
@@ -27,7 +27,6 @@ def get_best_available_base_datetime(target_date):
     base_date = today.strftime("%Y%m%d") if target_date > today else target_date.strftime("%Y%m%d")
     return base_date, base_time
 
-# ✅ 위험도 텍스트
 def get_risk_level(pred):
     if pred == 0: return "🟢 매우 낮음"
     elif pred <= 2: return "🟡 낮음"
@@ -35,7 +34,6 @@ def get_risk_level(pred):
     elif pred <= 10: return "🔴 높음"
     else: return "🔥 매우 높음"
 
-# ✅ 위경도 → X/Y
 def convert_latlon_to_xy(lat, lon):
     RE, GRID = 6371.00877, 5.0
     SLAT1, SLAT2, OLON, OLAT = 30.0, 60.0, 126.0, 38.0
@@ -56,7 +54,6 @@ def convert_latlon_to_xy(lat, lon):
     y = ro - ra * math.cos(theta) + YO + 0.5
     return int(x), int(y)
 
-# ✅ 기상청 API 호출 함수
 def get_weather(region_name, target_date):
     latlon = region_to_latlon.get(region_name, (37.5665, 126.9780))
     nx, ny = convert_latlon_to_xy(*latlon)
@@ -70,11 +67,16 @@ def get_weather(region_name, target_date):
     }
 
     try:
-        r = requests.get("https://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getVilageFcst", params=params, timeout=20, verify=False)
+        r = requests.get(
+            "https://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getVilageFcst",
+            params=params,
+            timeout=20,
+            verify=certifi.where()  # ✅ 안전한 SSL 연결
+        )
         items = r.json().get("response", {}).get("body", {}).get("items", {}).get("item", [])
 
         if not items:
-            st.error("❌ 예보 항목이 비어 있습니다. 아직 발표되지 않았거나, 잘못된 요청일 수 있습니다.")
+            st.error("❌ 예보 항목이 비어 있습니다. 아직 발표되지 않았거나 잘못된 요청일 수 있습니다.")
             return {}
 
         df = pd.DataFrame(items)
@@ -105,7 +107,6 @@ def calculate_avg_temp(tmx, tmn):
         return round((tmx + tmn) / 2, 1)
     return None
 
-# ✅ 좌표 맵
 region_to_latlon = {
     "서울특별시": (37.5665, 126.9780), "부산광역시": (35.1796, 129.0756), "대구광역시": (35.8722, 128.6025),
     "인천광역시": (37.4563, 126.7052), "광주광역시": (35.1595, 126.8526), "대전광역시": (36.3504, 127.3845),
