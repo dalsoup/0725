@@ -1,35 +1,34 @@
 name: Train Model
 
 on:
-  workflow_dispatch:  # ✅ 수동 실행 버튼을 위해 필요
+  workflow_dispatch:  # ✅ 수동 실행용
   schedule:
-  - cron: '0 8 * * *'  # 한국시간 오후 5시 (UTC 기준 08:00)
+    - cron: '0 8 * * *'  # ✅ 한국시간 오후 5시 (UTC 08:00)
 
 jobs:
   train-model:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repo
+      - name: 📦 Checkout repository
         uses: actions/checkout@v3
 
-      - name: Set up Python
+      - name: 🐍 Set up Python 3.10
         uses: actions/setup-python@v4
         with:
           python-version: '3.10'
 
-      - name: Install dependencies
+      - name: 📥 Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install pandas joblib openpyxl requests
 
-      - name: Train Model
-        run: |
-          python train_model.py
+      - name: 🤖 Run training script
+        run: python train_model.py
 
-      - name: Upload trained model
+      - name: ⬆️ Commit and push new model
         uses: EndBug/add-and-commit@v9
         with:
-          add: "trained_model.pkl feature_names.pkl"
+          add: "./trained_model.pkl ./feature_names.pkl"
           message: "🤖 Auto update trained_model.pkl from GitHub Actions"
           push: true
