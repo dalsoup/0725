@@ -182,6 +182,10 @@ if st.button("조회하기"):
         ymd = date_selected.strftime("%Y%m%d")
         url = f"http://apis.data.go.kr/1360000/AsosDalyInfoService/getWthrDataList?serviceKey={ASOS_API_KEY}&pageNo=1&numOfRows=10&dataType=JSON&dataCd=ASOS&dateCd=DAY&startDt={ymd}&endDt={ymd}&stnIds={stn_id}"
         r = requests.get(url, timeout=10, verify=False)
+        if "application/json" not in r.headers.get("Content-Type", ""):
+            st.error("❌ JSON 형식이 아닌 응답입니다. 아래 내용을 확인하세요.")
+            st.text(r.text[:500])
+            st.stop()
         j = r.json()
         item = j.get("response", {}).get("body", {}).get("items", {}).get("item", [])[0]
 
