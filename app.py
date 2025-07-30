@@ -198,22 +198,27 @@ with tab2:
     if uploaded_file and submit_button:
         try:
             df_raw = pd.read_excel(uploaded_file, sheet_name=region, header=None)
+            ymd = date_selected.strftime("%Y-%m-%d")
 
             if "합계" in df_raw.iloc[0].astype(str).tolist():
-                # 👉 서울시 구조 (가로형)
+                # ✅ 서울시형 구조 (가로)
                 df_raw.columns = df_raw.iloc[1]
                 df = df_raw[2:].reset_index(drop=True)
-                df.rename(columns={df.columns[0]: "일자", df.columns[1]: "환자수"}, inplace=True)
+                df.rename(columns={df.columns[0]: "일자"}, inplace=True)
                 df["일자"] = pd.to_datetime(df["일자"], errors="coerce").dt.strftime("%Y-%m-%d")
-                df["환자수"] = pd.to_numeric(df["환자수"], errors="coerce")
+                df_day = df[df["일자"] == ymd]
+                if df_day.empty:
+                    st.warning("📭 선택한 날짜에 해당하는 환자 수 정보가 없습니다.")
+                    st.stop()
+
+                # 일자를 제외한 나머지 열 전체 환자수 합산
+                환자수 = pd.to_numeric(df_day.drop(columns=["일자"]).values.flatten(), errors="coerce").sum()
+
             else:
-                # 👉 구 구조 (세로형)
+                # ✅ 일반 시군구 구조 (세로)
                 df_raw.columns = df_raw.iloc[2]
                 df = df_raw[3:].reset_index(drop=True)
                 df.columns = df.columns.map(lambda x: str(x).strip().replace("\n", "").replace(" ", ""))
-                if not any("일자" in col for col in df.columns):
-                    st.error("❌ '일자' 컬럼이 없습니다.")
-                    st.stop()
                 일자_col = next(col for col in df.columns if "일자" in col)
                 환자수_col = next((col for col in df.columns if "합계" in str(df[col].iloc[0])), None)
                 if 환자수_col is None:
@@ -223,20 +228,11 @@ with tab2:
                 df = df[[일자_col, 환자수_col]]
                 df.columns = ["일자", "환자수"]
                 df["환자수"] = pd.to_numeric(df["환자수"], errors="coerce")
-
-            # ✅ 날짜 필터링
-            ymd = date_selected.strftime("%Y-%m-%d")
-            df = df[df["일자"] == ymd]
-            if df.empty:
-                st.warning("📭 선택한 날짜에 해당하는 환자 수 정보가 없습니다.")
-                st.stop()
-
-            # ✅ 환자수 추출 (단일값 or Series 대응)
-            row_value = df["환자수"].iloc[0]
-            if isinstance(row_value, pd.Series):
-                환자수 = int(pd.to_numeric(row_value, errors="coerce").sum())
-            else:
-                환자수 = int(pd.to_numeric(row_value, errors="coerce"))
+                df = df[df["일자"] == ymd]
+                if df.empty:
+                    st.warning("📭 선택한 날짜에 해당하는 환자 수 정보가 없습니다.")
+                    st.stop()
+                환자수 = int(df["환자수"].iloc[0])
 
             # ✅ 기상 정보 결합
             weather = get_asos_weather(region, date_selected.strftime("%Y%m%d"))
@@ -256,7 +252,7 @@ with tab2:
                 "환자수": 환자수
             }
 
-            # ✅ GitHub 저장
+            # ✅ CSV 파일 저장 및 GitHub 푸시
             csv_path = GITHUB_FILENAME
             if os.path.exists(csv_path):
                 existing = pd.read_csv(csv_path)
@@ -266,6 +262,7 @@ with tab2:
                 df_all = pd.DataFrame([input_row])
             df_all.to_csv(csv_path, index=False, encoding="utf-8-sig")
 
+            # GitHub 업로드
             with open(csv_path, "rb") as f:
                 content = f.read()
             b64_content = base64.b64encode(content).decode("utf-8")
@@ -292,4 +289,5 @@ with tab2:
 
         except Exception as e:
             st.error(f"❌ 처리 중 오류 발생: {e}")
+
 
