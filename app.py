@@ -176,61 +176,56 @@ if st.button("조회하기"):
     else:
         st.info("🕰 과거 날짜 → ASOS + 엑셀 기반 학습데이터 기록")
 
+        # 1️⃣ ASOS 기반 예측 먼저 수행 (예측 모드와 동일)
+        st.markdown("#### ☁️ 오늘의 기상정보 (ASOS 기준)")
+        stn_id = region_to_stn_id[region]
+        ymd = date_selected.strftime("%Y%m%d")
+        url = f"https://apis.data.go.kr/1360000/AsosDalyInfoService/getWthrDataList?serviceKey={ASOS_API_KEY}&pageNo=1&numOfRows=10&dataType=JSON&dataCd=ASOS&dateCd=DAY&startDt={ymd}&endDt={ymd}&stnIds={stn_id}"
+        r = requests.get(url, timeout=10)
+        j = r.json()
+        item = j.get("response", {}).get("body", {}).get("items", {}).get("item", [])[0]
+
+        tmx = float(item["maxTa"])
+        tmn = float(item["minTa"])
+        reh = float(item["avgRhm"])
+        avg = round((tmx + tmn) / 2, 1)
+
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("최고기온", f"{tmx:.1f}℃")
+        col2.metric("최저기온", f"{tmn:.1f}℃")
+        col3.metric("평균기온", f"{avg:.1f}℃")
+        col4.metric("습도", f"{reh:.1f}%")
+
+        input_df = pd.DataFrame([{
+            "최고체감온도(°C)": round(tmx + 1.5, 1),
+            "최고기온(°C)": tmx,
+            "평균기온(°C)": avg,
+            "최저기온(°C)": tmn,
+            "평균상대습도(%)": reh
+        }])
+
+        st.subheader("🧪 모델 입력값 확인")
+        st.dataframe(input_df)
+
+        X_input = input_df[feature_names].copy()
+        X_input.columns = model.get_booster().feature_names
+
+        pred = model.predict(X_input)[0]
+        def get_risk_level(pred):
+            if pred == 0: return "🟢 매우 낮음"
+            elif pred <= 2: return "🟡 낮음"
+            elif pred <= 5: return "🟠 보통"
+            elif pred <= 10: return "🔴 높음"
+            else: return "🔥 매우 높음"
+        risk = get_risk_level(pred)
+
+        st.markdown("#### 💡 온열질환자 예측")
+        c1, c2 = st.columns(2)
+        c1.metric("예측 환자 수", f"{pred:.2f}명")
+        c2.metric("위험 등급", risk)
+
+        # 2️⃣ 엑셀 업로드로 실제 환자수 추가 기록
         uploaded_file = st.file_uploader("질병청 온열질환 엑셀 업로드 (시트명 = 지역명)", type=["xlsx"])
         if uploaded_file:
             try:
-                sheet_df = pd.read_excel(uploaded_file, sheet_name=region, engine="openpyxl")
-                patient_col = [col for col in sheet_df.columns if "환자수" in col or "환자 수" in col]
-                date_col = [col for col in sheet_df.columns if "일자" in col or "날짜" in col or "기준일" in col]
-
-                if not patient_col or not date_col:
-                    st.error("❌ 시트에 '환자수'와 '일자' 관련 컬럼이 필요합니다.")
-                    st.stop()
-
-                df = sheet_df[[date_col[0], patient_col[0]]].copy()
-                df.columns = ["일자", "환자수"]
-                df["일자"] = pd.to_datetime(df["일자"]).dt.date
-                filtered = df[df["일자"] == date_selected]
-
-                if filtered.empty:
-                    st.warning("⚠️ 해당 날짜에 환자수가 없습니다.")
-                    st.stop()
-
-                환자수 = int(filtered.iloc[0]["환자수"])
-
-                stn_id = region_to_stn_id[region]
-                ymd = date_selected.strftime("%Y%m%d")
-                url = f"https://apis.data.go.kr/1360000/AsosDalyInfoService/getWthrDataList?serviceKey={ASOS_API_KEY}&pageNo=1&numOfRows=10&dataType=JSON&dataCd=ASOS&dateCd=DAY&startDt={ymd}&endDt={ymd}&stnIds={stn_id}"
-                r = requests.get(url, timeout=10)
-                j = r.json()
-                item = j.get("response", {}).get("body", {}).get("items", {}).get("item", [])[0]
-
-                tmx = float(item["maxTa"])
-                tmn = float(item["minTa"])
-                reh = float(item["avgRhm"])
-                avg = round((tmx + tmn) / 2, 1)
-
-                input_row = {
-                    "일자": ymd,
-                    "지역": region,
-                    "최고체감온도(°C)": round(tmx + 1.5, 1),
-                    "최고기온(°C)": tmx,
-                    "평균기온(°C)": avg,
-                    "최저기온(°C)": tmn,
-                    "평균상대습도(%)": reh,
-                    "환자수": 환자수
-                }
-                st.success(f"✅ {ymd} {region} → 환자수 {환자수}명 기록 완료")
-                st.dataframe(pd.DataFrame([input_row]))
-
-                csv_path = "ML_asos_dataset.csv"
-                if os.path.exists(csv_path):
-                    df = pd.read_csv(csv_path)
-                    df = pd.concat([df, pd.DataFrame([input_row])], ignore_index=True)
-                else:
-                    df = pd.DataFrame([input_row])
-
-                df.to_csv(csv_path, index=False, encoding="utf-8-sig")
-
-            except Exception as e:
                 st.error(f"❌ 처리 중 오류 발생: {e}")
