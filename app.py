@@ -250,17 +250,18 @@ with st.form(key="upload_form"):
 if uploaded_file is not None and submit_button:
     try:
         df = pd.read_excel(uploaded_file, sheet_name=region)
-        df.columns = df.columns.str.strip()  # 컬럼명 공백 제거
-        df.columns = df.columns.str.replace("\n", "")  # 줄바꿈 제거
+        df.columns = df.columns.astype(str).str.replace("\\n", "").str.replace("\\r", "").str.replace(" ", "").str.strip()
 
-        col_map = {col: col.strip().replace("\n", "") for col in df.columns}
+        col_map = {col: col.strip().replace("\n", "").replace(" ", "") for col in df.columns}
         df.rename(columns=col_map, inplace=True)
 
-        if not any("일자" in col for col in df.columns) or not any("환자수" in col for col in df.columns):
+        candidate_cols = list(df.columns)
+        date_col = next((col for col in candidate_cols if "일자" in col), None)
+        patient_col = next((col for col in candidate_cols if "환자수" in col), None)
+
+        if not date_col or not patient_col:
             st.error("❌ 엑셀 파일에 '일자' 또는 '환자수' 컬럼이 없습니다.")
         else:
-            date_col = [col for col in df.columns if "일자" in col][0]
-            patient_col = [col for col in df.columns if "환자수" in col][0]
             df[date_col] = pd.to_datetime(df[date_col]).dt.strftime("%Y-%m-%d")
             df = df[df[date_col] == ymd]
 
