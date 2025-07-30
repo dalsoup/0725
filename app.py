@@ -122,7 +122,9 @@ report_df = load_report()
 today = datetime.date.today()
 
 if date_selected < today:
-    row = report_df[report_df["date"] == pd.Timestamp(date_selected)].iloc[0]
+mask = report_df["date"] == pd.Timestamp(date_selected)
+if mask.any():
+    row = report_df[mask].iloc[0]
     risk = row["예측 위험도"]
     st.markdown(f"#### ✅ <b>{date_selected}</b> 리포트 (출처: 저장된 리포트)", unsafe_allow_html=True)
     st.markdown(f"""
@@ -135,9 +137,8 @@ if date_selected < today:
     - 비교값(2024): {row['2024 실제 환자수']}명  
     """)
 else:
-    weather = get_weather(region, date_selected)
-    if not weather:
-        st.error("⚠️ 기상 정보를 불러오지 못했습니다.")
+    st.warning(f"⚠️ 선택한 날짜({date_selected})에 대한 리포트 데이터가 없습니다.")
+
     else:
         avg_temp = calculate_avg_temp(weather["TMX"], weather["TMN"])
         X = pd.DataFrame([{
