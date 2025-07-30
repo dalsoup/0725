@@ -5,27 +5,13 @@ import joblib
 import requests
 import math
 from urllib.parse import unquote
-import certifi  # ✅ SSL 인증서 번들
 
 st.set_page_config(layout="centered")
 model = joblib.load("trained_model.pkl")
 feature_names = joblib.load("feature_names.pkl")
 KMA_API_KEY = unquote(st.secrets["KMA"]["API_KEY"])
 
-def get_best_available_base_datetime(target_date):
-    now = datetime.datetime.now()
-    today = now.date()
-    times = ["2300", "2000", "1700", "1400", "1100", "0800", "0500", "0200"]
-    current_time = int(f"{now.hour:02d}00")
-    for t in times:
-        if int(t) <= current_time:
-            base_time = t
-            break
-    else:
-        base_time = "2300"
-        target_date -= datetime.timedelta(days=1)
-    base_date = today.strftime("%Y%m%d") if target_date > today else target_date.strftime("%Y%m%d")
-    return base_date, base_time
+# ==================== 기능 함수 ====================
 
 def get_risk_level(pred):
     if pred == 0: return "🟢 매우 낮음"
@@ -54,10 +40,41 @@ def convert_latlon_to_xy(lat, lon):
     y = ro - ra * math.cos(theta) + YO + 0.5
     return int(x), int(y)
 
+def get_latest_base_datetime(target_date):
+    now = datetime.datetime.now()
+    today = now.date()
+
+    if target_date == today:
+        hour = now.hour
+        if hour >= 23: bt = "2300"
+        elif hour >= 20: bt = "2000"
+        elif hour >= 17: bt = "1700"
+        elif hour >= 14: bt = "1400"
+        elif hour >= 11: bt = "1100"
+        elif hour >= 8: bt = "0800"
+        elif hour >= 5: bt = "0500"
+        elif hour >= 2: bt = "0200"
+        else: bt = "2300"; target_date -= datetime.timedelta(days=1)
+        return target_date.strftime("%Y%m%d"), bt
+
+    elif target_date > today:
+        hour = now.hour
+        if hour >= 23: bt = "2300"
+        elif hour >= 20: bt = "2000"
+        elif hour >= 17: bt = "1700"
+        elif hour >= 14: bt = "1400"
+        elif hour >= 11: bt = "1100"
+        elif hour >= 8: bt = "0800"
+        else: bt = "2300"; target_date -= datetime.timedelta(days=1)
+        return today.strftime("%Y%m%d"), bt
+
+    else:
+        return (target_date - datetime.timedelta(days=1)).strftime("%Y%m%d"), "2300"
+
 def get_weather(region_name, target_date):
     latlon = region_to_latlon.get(region_name, (37.5665, 126.9780))
     nx, ny = convert_latlon_to_xy(*latlon)
-    base_date, base_time = get_best_available_base_datetime(target_date)
+    base_date, base_time = get_latest_base_datetime(target_date)
 
     params = {
         "serviceKey": KMA_API_KEY,
@@ -67,26 +84,18 @@ def get_weather(region_name, target_date):
     }
 
     try:
-        r = requests.get(
-            "https://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getVilageFcst",
-            params=params,
-            timeout=20,
-            verify=certifi.where()  # ✅ 안전한 SSL 연결
-        )
+        r = requests.get("http://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getVilageFcst", params=params, timeout=10, verify=False)
         items = r.json().get("response", {}).get("body", {}).get("items", {}).get("item", [])
-
-        if not items:
-            st.error("❌ 예보 항목이 비어 있습니다. 아직 발표되지 않았거나 잘못된 요청일 수 있습니다.")
-            return {}
-
         df = pd.DataFrame(items)
 
-        if "fcstDate" not in df.columns:
-            st.error("❌ 응답 데이터에 'fcstDate' 컬럼이 없습니다.")
-            return {}
-
+        # 🔥 핵심: fcstDate 비교 위해 문자열 변환
         df["fcstDate"] = df["fcstDate"].astype(str)
         target_str = target_date.strftime("%Y%m%d")
+
+        if target_str not in df["fcstDate"].values:
+            st.error(f"❌ 예보 데이터에 {target_str} 날짜가 포함되어 있지 않습니다.")
+            return {}
+
         df = df[df["fcstDate"] == target_str]
         df = df[df["category"].isin(["T3H", "TMX", "TMN", "REH"])]
 
@@ -99,7 +108,7 @@ def get_weather(region_name, target_date):
         return summary
 
     except Exception as e:
-        st.error(f"⚠️ API 호출 실패: {e}")
+        print("⚠️ API 호출 실패:", e)
         return {}
 
 def calculate_avg_temp(tmx, tmn):
@@ -116,7 +125,8 @@ region_to_latlon = {
     "경상남도": (35.4606, 128.2132), "제주특별자치도": (33.4996, 126.5312)
 }
 
-# ==================== UI ====================
+# ==================== Streamlit UI ====================
+
 st.title("🔥 온열질환 예측 대시보드")
 region = st.selectbox("지역 선택", list(region_to_latlon.keys()))
 today = datetime.date.today()
