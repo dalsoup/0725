@@ -169,18 +169,15 @@ if predict_clicked and region and date_selected:
     col3.metric("평균기온", f"{avg_temp:.1f}℃" if avg_temp is not None else "-℃")
     col4.metric("습도", f"{weather.get('REH', 0):.1f}%")
 
-    # ---- 예측 입력 생성
+    # ✅ 예측 입력값 생성 (정확한 컬럼명으로)
     input_df = pd.DataFrame([{ 
         "광역자치단체": region,
         "최고체감온도(°C)": weather.get("TMX", 0) + 1.5,
         "최고기온(°C)": weather.get("TMX", 0),
         "평균기온(°C)": avg_temp or 0,
         "최저기온(°C)": weather.get("TMN", 0),
-        "평균상대습도(%)": weather.get("REH", 0)
+        "습도(%)": weather.get("REH", 0)  # ✅ 이름 맞춤!
     }])
-
-    # ✅ 컬럼명 학습 모델 기준으로 변경
-    input_df.rename(columns={"평균상대습도(%)": "습도(%)"}, inplace=True)
 
     try:
         X_input = input_df[feature_names]
