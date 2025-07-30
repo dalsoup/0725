@@ -250,71 +250,76 @@ with st.form(key="upload_form"):
 if uploaded_file is not None and submit_button:
     try:
         df = pd.read_excel(uploaded_file, sheet_name=region)
-        df = df[df['일자'] == ymd]
-        if df.empty:
-            st.warning("📭 선택한 날짜에 해당하는 환자 수 정보가 없습니다.")
+        df.columns = df.columns.str.strip()  # 컬럼명 공백 제거
+        if '일자' not in df.columns or '환자수' not in df.columns:
+            st.error("❌ 엑셀 파일에 '일자' 또는 '환자수' 컬럼이 없습니다.")
         else:
-            환자수 = int(df.iloc[0]['환자수']) if '환자수' in df.columns else 0
-            input_row = {
-                "일자": ymd,
-                "지역": region,
-                "최고체감온도(°C)": tmx + 1.5 if tmx else 0,
-                "최고기온(°C)": tmx or 0,
-                "평균기온(°C)": avg_temp or 0,
-                "최저기온(°C)": tmn or 0,
-                "평균상대습도(%)": weather.get("REH", 0),
-                "환자수": 환자수
-            }
-
-            st.success(f"✅ {ymd} {region} → 환자수 {환자수}명 기록 완료")
-            st.dataframe(pd.DataFrame([input_row]))
-
-            csv_path = "ML_asos_dataset.csv"
-            if os.path.exists(csv_path):
-                existing = pd.read_csv(csv_path)
-                existing = existing[~((existing["일자"] == ymd) & (existing["지역"] == region))]
-                df = pd.concat([existing, pd.DataFrame([input_row])], ignore_index=True)
+            df['일자'] = pd.to_datetime(df['일자']).dt.strftime("%Y-%m-%d")
+            df = df[df['일자'] == ymd]
+            if df.empty:
+                st.warning("📭 선택한 날짜에 해당하는 환자 수 정보가 없습니다.")
             else:
-                df = pd.DataFrame([input_row])
-
-            df.to_csv(GITHUB_FILENAME, index=False, encoding="utf-8-sig")
-
-            try:
-                with open(GITHUB_FILENAME, "rb") as f:
-                    content = f.read()
-                b64_content = base64.b64encode(content).decode("utf-8")
-                api_url = f"https://api.github.com/repos/{GITHUB_USERNAME}/{GITHUB_REPO}/contents/{GITHUB_FILENAME}"
-
-                r = requests.get(api_url, headers={"Authorization": f"Bearer {GITHUB_TOKEN}"})
-                if r.status_code == 200:
-                    sha = r.json()["sha"]
-                else:
-                    sha = None
-
-                commit_msg = f"Update {GITHUB_FILENAME} with new data for {ymd} {region}"
-                payload = {
-                    "message": commit_msg,
-                    "content": b64_content,
-                    "branch": GITHUB_BRANCH
+                환자수 = int(df.iloc[0]['환자수'])
+                input_row = {
+                    "일자": ymd,
+                    "지역": region,
+                    "최고체감온도(°C)": tmx + 1.5 if tmx else 0,
+                    "최고기온(°C)": tmx or 0,
+                    "평균기온(°C)": avg_temp or 0,
+                    "최저기온(°C)": tmn or 0,
+                    "평균상대습도(%)": weather.get("REH", 0),
+                    "환자수": 환자수
                 }
-                if sha:
-                    payload["sha"] = sha
 
-                headers = {
-                    "Authorization": f"Bearer {GITHUB_TOKEN}",
-                    "Accept": "application/vnd.github+json"
-                }
-                r = requests.put(api_url, headers=headers, json=payload)
+                st.success(f"✅ {ymd} {region} → 환자수 {환자수}명 기록 완료")
+                st.dataframe(pd.DataFrame([input_row]))
 
-                if r.status_code in [200, 201]:
-                    st.session_state.stored = True
-                    st.success("✅ GitHub 저장 완료")
-                    st.info(f"🔗 [파일 바로 확인하기](https://github.com/{GITHUB_USERNAME}/{GITHUB_REPO}/blob/{GITHUB_BRANCH}/{GITHUB_FILENAME})")
+                csv_path = "ML_asos_dataset.csv"
+                if os.path.exists(csv_path):
+                    existing = pd.read_csv(csv_path)
+                    existing = existing[~((existing["일자"] == ymd) & (existing["지역"] == region))]
+                    df = pd.concat([existing, pd.DataFrame([input_row])], ignore_index=True)
                 else:
-                    st.warning(f"⚠️ GitHub 저장 실패: {r.status_code} {r.text[:200]}")
+                    df = pd.DataFrame([input_row])
 
-            except Exception as e:
-                st.error(f"❌ GitHub 업로드 중 오류: {e}")
+                df.to_csv(GITHUB_FILENAME, index=False, encoding="utf-8-sig")
+
+                try:
+                    with open(GITHUB_FILENAME, "rb") as f:
+                        content = f.read()
+                    b64_content = base64.b64encode(content).decode("utf-8")
+                    api_url = f"https://api.github.com/repos/{GITHUB_USERNAME}/{GITHUB_REPO}/contents/{GITHUB_FILENAME}"
+
+                    r = requests.get(api_url, headers={"Authorization": f"Bearer {GITHUB_TOKEN}"})
+                    if r.status_code == 200:
+                        sha = r.json()["sha"]
+                    else:
+                        sha = None
+
+                    commit_msg = f"Update {GITHUB_FILENAME} with new data for {ymd} {region}"
+                    payload = {
+                        "message": commit_msg,
+                        "content": b64_content,
+                        "branch": GITHUB_BRANCH
+                    }
+                    if sha:
+                        payload["sha"] = sha
+
+                    headers = {
+                        "Authorization": f"Bearer {GITHUB_TOKEN}",
+                        "Accept": "application/vnd.github+json"
+                    }
+                    r = requests.put(api_url, headers=headers, json=payload)
+
+                    if r.status_code in [200, 201]:
+                        st.session_state.stored = True
+                        st.success("✅ GitHub 저장 완료")
+                        st.info(f"🔗 [파일 바로 확인하기](https://github.com/{GITHUB_USERNAME}/{GITHUB_REPO}/blob/{GITHUB_BRANCH}/{GITHUB_FILENAME})")
+                    else:
+                        st.warning(f"⚠️ GitHub 저장 실패: {r.status_code} {r.text[:200]}")
+
+                except Exception as e:
+                    st.error(f"❌ GitHub 업로드 중 오류: {e}")
 
     except Exception as e:
         st.error(f"❌ 처리 중 오류 발생: {e}")
