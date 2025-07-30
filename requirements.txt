@@ -5,3 +5,4 @@ xgboost
 openpyxl
 streamlit
 scikit-learn
+requests

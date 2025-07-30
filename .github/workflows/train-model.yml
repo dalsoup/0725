@@ -20,8 +20,7 @@ jobs:
 
       - name: 📥 Install dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install pandas joblib openpyxl requests scikit-learn
+          pip install -r requirements.txt
 
       - name: 🤖 Run training script
         run: python train_model.py
