@@ -11,27 +11,23 @@ model = joblib.load("trained_model.pkl")
 feature_names = joblib.load("feature_names.pkl")
 KMA_API_KEY = unquote(st.secrets["KMA"]["API_KEY"])
 
-# ✅ 수정된 발표 시각 결정 함수
+# ✅ 발표 시간 결정 함수
 def get_best_available_base_datetime(target_date):
     now = datetime.datetime.now()
     today = now.date()
-
-    # 기상청 발표 시간 (거꾸로 순회)
-    available_times = ["2300", "2000", "1700", "1400", "1100", "0800", "0500", "0200"]
-    current_hour = now.hour
-    current_time_str = f"{current_hour:02d}00"
-    
-    for t in available_times:
-        if int(t) <= int(current_time_str):
+    times = ["2300", "2000", "1700", "1400", "1100", "0800", "0500", "0200"]
+    current_time = int(f"{now.hour:02d}00")
+    for t in times:
+        if int(t) <= current_time:
             base_time = t
             break
     else:
         base_time = "2300"
-        target_date = target_date - datetime.timedelta(days=1)
-
+        target_date -= datetime.timedelta(days=1)
     base_date = today.strftime("%Y%m%d") if target_date > today else target_date.strftime("%Y%m%d")
     return base_date, base_time
 
+# ✅ 위험도 텍스트
 def get_risk_level(pred):
     if pred == 0: return "🟢 매우 낮음"
     elif pred <= 2: return "🟡 낮음"
@@ -39,6 +35,7 @@ def get_risk_level(pred):
     elif pred <= 10: return "🔴 높음"
     else: return "🔥 매우 높음"
 
+# ✅ 위경도 → X/Y
 def convert_latlon_to_xy(lat, lon):
     RE, GRID = 6371.00877, 5.0
     SLAT1, SLAT2, OLON, OLAT = 30.0, 60.0, 126.0, 38.0
@@ -59,14 +56,11 @@ def convert_latlon_to_xy(lat, lon):
     y = ro - ra * math.cos(theta) + YO + 0.5
     return int(x), int(y)
 
+# ✅ 기상청 API 호출 함수
 def get_weather(region_name, target_date):
     latlon = region_to_latlon.get(region_name, (37.5665, 126.9780))
     nx, ny = convert_latlon_to_xy(*latlon)
     base_date, base_time = get_best_available_base_datetime(target_date)
-
-    st.write("📡 base_date:", base_date)
-    st.write("🕓 base_time:", base_time)
-    st.write("🎯 target_date:", target_date.strftime("%Y%m%d"))
 
     params = {
         "serviceKey": KMA_API_KEY,
@@ -76,21 +70,21 @@ def get_weather(region_name, target_date):
     }
 
     try:
-        r = requests.get("http://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getVilageFcst", params=params, timeout=10, verify=False)
+        r = requests.get("https://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getVilageFcst", params=params, timeout=20, verify=False)
         items = r.json().get("response", {}).get("body", {}).get("items", {}).get("item", [])
+
+        if not items:
+            st.error("❌ 예보 항목이 비어 있습니다. 아직 발표되지 않았거나, 잘못된 요청일 수 있습니다.")
+            return {}
+
         df = pd.DataFrame(items)
-        st.write("📥 raw items:", items[:3])  # 상위 3개만 출력
-        st.write("📥 df.columns:", df.columns.tolist())
+
+        if "fcstDate" not in df.columns:
+            st.error("❌ 응답 데이터에 'fcstDate' 컬럼이 없습니다.")
+            return {}
 
         df["fcstDate"] = df["fcstDate"].astype(str)
         target_str = target_date.strftime("%Y%m%d")
-
-        st.write("📦 fcstDate 리스트:", df["fcstDate"].unique())
-
-        if target_str not in df["fcstDate"].values:
-            st.error(f"❌ 예보 데이터에 {target_str} 날짜가 포함되어 있지 않습니다.")
-            return {}
-
         df = df[df["fcstDate"] == target_str]
         df = df[df["category"].isin(["T3H", "TMX", "TMN", "REH"])]
 
@@ -111,6 +105,7 @@ def calculate_avg_temp(tmx, tmn):
         return round((tmx + tmn) / 2, 1)
     return None
 
+# ✅ 좌표 맵
 region_to_latlon = {
     "서울특별시": (37.5665, 126.9780), "부산광역시": (35.1796, 129.0756), "대구광역시": (35.8722, 128.6025),
     "인천광역시": (37.4563, 126.7052), "광주광역시": (35.1595, 126.8526), "대전광역시": (36.3504, 127.3845),
@@ -121,7 +116,6 @@ region_to_latlon = {
 }
 
 # ==================== UI ====================
-
 st.title("🔥 온열질환 예측 대시보드")
 region = st.selectbox("지역 선택", list(region_to_latlon.keys()))
 today = datetime.date.today()
