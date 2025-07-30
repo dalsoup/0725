@@ -11,6 +11,8 @@ model = joblib.load("trained_model.pkl")
 feature_names = joblib.load("feature_names.pkl")
 KMA_API_KEY = unquote(st.secrets["KMA"]["API_KEY"])
 
+# ==================== 기능 함수 ====================
+
 def get_risk_level(pred):
     if pred == 0: return "🟢 매우 낮음"
     elif pred <= 2: return "🟡 낮음"
@@ -77,23 +79,36 @@ def get_weather(region_name, target_date):
     params = {
         "serviceKey": KMA_API_KEY,
         "numOfRows": "300", "pageNo": "1", "dataType": "JSON",
-        "base_date": base_date, "base_time": base_time, "nx": nx, "ny": ny
+        "base_date": base_date, "base_time": base_time,
+        "nx": nx, "ny": ny
     }
 
     try:
         r = requests.get("http://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getVilageFcst", params=params, timeout=10, verify=False)
         items = r.json().get("response", {}).get("body", {}).get("items", {}).get("item", [])
         df = pd.DataFrame(items)
+
+        # 🔥 핵심: fcstDate 비교 위해 문자열 변환
+        df["fcstDate"] = df["fcstDate"].astype(str)
+        target_str = target_date.strftime("%Y%m%d")
+
+        if target_str not in df["fcstDate"].values:
+            st.error(f"❌ 예보 데이터에 {target_str} 날짜가 포함되어 있지 않습니다.")
+            return {}
+
+        df = df[df["fcstDate"] == target_str]
         df = df[df["category"].isin(["T3H", "TMX", "TMN", "REH"])]
-        df = df[df["fcstDate"] == target_date.strftime("%Y%m%d")]
+
         summary = {}
         for cat in ["TMX", "TMN", "REH", "T3H"]:
             vals = df[df["category"] == cat]["fcstValue"].astype(float)
             if not vals.empty:
                 summary[cat] = vals.mean() if cat in ["REH", "T3H"] else vals.iloc[0]
+
         return summary
+
     except Exception as e:
-        print("API 실패:", e)
+        print("⚠️ API 호출 실패:", e)
         return {}
 
 def calculate_avg_temp(tmx, tmn):
@@ -110,7 +125,8 @@ region_to_latlon = {
     "경상남도": (35.4606, 128.2132), "제주특별자치도": (33.4996, 126.5312)
 }
 
-# ----------- UI -----------
+# ==================== Streamlit UI ====================
+
 st.title("🔥 온열질환 예측 대시보드")
 region = st.selectbox("지역 선택", list(region_to_latlon.keys()))
 today = datetime.date.today()
