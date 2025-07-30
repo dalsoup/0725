@@ -250,14 +250,18 @@ with st.form(key="upload_form"):
 if uploaded_file is not None and submit_button:
     try:
         df = pd.read_excel(uploaded_file, sheet_name=region)
-        df.columns = df.columns.astype(str).str.replace("\\n", "").str.replace("\\r", "").str.replace(" ", "").str.strip()
+        df.columns = df.columns.astype(str).str.replace("\\n", "", regex=False).str.replace("\\r", "", regex=False).str.replace(" ", "", regex=False).str.strip()
 
-        col_map = {col: col.strip().replace("\n", "").replace(" ", "") for col in df.columns}
+        col_map = {col: col.strip().replace("\n", "").replace("\r", "").replace(" ", "") for col in df.columns}
         df.rename(columns=col_map, inplace=True)
 
         candidate_cols = list(df.columns)
         date_col = next((col for col in candidate_cols if "일자" in col), None)
         patient_col = next((col for col in candidate_cols if "환자수" in col), None)
+
+        st.write("🔍 컬럼 확인:", candidate_cols)
+        st.write("📌 인식된 일자 컬럼:", date_col)
+        st.write("📌 인식된 환자수 컬럼:", patient_col)
 
         if not date_col or not patient_col:
             st.error("❌ 엑셀 파일에 '일자' 또는 '환자수' 컬럼이 없습니다.")
@@ -332,3 +336,4 @@ if uploaded_file is not None and submit_button:
 
     except Exception as e:
         st.error(f"❌ 처리 중 오류 발생: {e}")
+
