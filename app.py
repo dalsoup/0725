@@ -245,35 +245,48 @@ if 'stored' not in st.session_state:
 
 with st.form(key="upload_form"):
     uploaded_file = st.file_uploader("질병청 온열질환 엑셀 업로드 (시트명 = 지역명)", type=["xlsx"])
+    region = st.selectbox("지역 선택 (엑셀 시트명과 일치해야 함)", [
+        "서울특별시", "부산광역시", "대구광역시", "인천광역시", "광주광역시", "대전광역시",
+        "울산광역시", "세종특별자치시", "경기도", "강원도", "충청북도", "충청남도",
+        "전라북도", "전라남도", "경상북도", "경상남도", "제주특별자치도"
+    ])
+    date_selected = st.date_input("기록할 날짜 선택", value=datetime.date.today())
     submit_button = st.form_submit_button(label="📅 업로드 및 학습 데이터 저장")
 
 if uploaded_file is not None and submit_button:
     try:
-        df = pd.read_excel(uploaded_file, sheet_name=region, header=2)
-        df = df.reset_index(drop=True)
+        df_raw = pd.read_excel(uploaded_file, sheet_name=region, header=None)
+        df_raw.columns = df_raw.iloc[2]
+        df = df_raw[3:].reset_index(drop=True)
 
+        df.columns = df.columns.map(lambda x: str(x).strip().replace("\n", "").replace(" ", ""))
         st.write("🔍 컬럼 확인:", list(df.columns))
 
-        # '일자' 컬럼 확인
-        if "일자" not in df.columns:
+        if not any("일자" in col for col in df.columns):
             st.error("❌ '일자' 컬럼이 없습니다.")
         else:
-            # '합계' 값이 포함된 컬럼명을 탐색
-            patient_col = next((col for col in df.columns if str(df[col].iloc[0]).strip() == "합계"), None)
+            일자_col = next((col for col in df.columns if "일자" in col), None)
+            환자수_col = next((col for col in df.columns if "합계" in str(df[col].iloc[0])), None)
 
-            st.write("📌 인식된 환자수 컬럼:", patient_col)
+            st.write("📌 인식된 일자 컬럼:", 일자_col)
+            st.write("📌 인식된 환자수 컬럼:", 환자수_col)
 
-            if patient_col is None:
+            if 환자수_col is None:
                 st.error("❌ '합계' 값이 있는 열을 찾을 수 없습니다.")
             else:
-                df = df[1:]  # '합계'가 있는 헤더 행 제거
-                df["일자"] = pd.to_datetime(df["일자"], errors='coerce').dt.strftime("%Y-%m-%d")
-                df = df[df["일자"] == ymd]
+                df[일자_col] = pd.to_datetime(df[일자_col], errors='coerce').dt.strftime("%Y-%m-%d")
+                ymd = date_selected.strftime("%Y-%m-%d")
+                df = df[df[일자_col] == ymd]
 
                 if df.empty:
                     st.warning("📭 선택한 날짜에 해당하는 환자 수 정보가 없습니다.")
                 else:
-                    환자수 = int(df.iloc[0][patient_col])
+                    환자수 = int(df.iloc[0][환자수_col])
+                    # tmx, tmn, avg_temp, weather는 외부에서 가져온 값이라 가정
+                    # 예시용 기본값 설정
+                    tmx = tmn = avg_temp = 0
+                    weather = {"REH": 0}
+
                     input_row = {
                         "일자": ymd,
                         "지역": region,
@@ -292,11 +305,11 @@ if uploaded_file is not None and submit_button:
                     if os.path.exists(csv_path):
                         existing = pd.read_csv(csv_path)
                         existing = existing[~((existing["일자"] == ymd) & (existing["지역"] == region))]
-                        df = pd.concat([existing, pd.DataFrame([input_row])], ignore_index=True)
+                        df_all = pd.concat([existing, pd.DataFrame([input_row])], ignore_index=True)
                     else:
-                        df = pd.DataFrame([input_row])
+                        df_all = pd.DataFrame([input_row])
 
-                    df.to_csv(GITHUB_FILENAME, index=False, encoding="utf-8-sig")
+                    df_all.to_csv(GITHUB_FILENAME, index=False, encoding="utf-8-sig")
 
                     try:
                         with open(GITHUB_FILENAME, "rb") as f:
@@ -305,10 +318,7 @@ if uploaded_file is not None and submit_button:
                         api_url = f"https://api.github.com/repos/{GITHUB_USERNAME}/{GITHUB_REPO}/contents/{GITHUB_FILENAME}"
 
                         r = requests.get(api_url, headers={"Authorization": f"Bearer {GITHUB_TOKEN}"})
-                        if r.status_code == 200:
-                            sha = r.json()["sha"]
-                        else:
-                            sha = None
+                        sha = r.json().get("sha") if r.status_code == 200 else None
 
                         commit_msg = f"Update {GITHUB_FILENAME} with new data for {ymd} {region}"
                         payload = {
