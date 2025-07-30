@@ -17,6 +17,7 @@ GITHUB_USERNAME = st.secrets["GITHUB"]["USERNAME"]
 GITHUB_REPO = st.secrets["GITHUB"]["REPO"]
 GITHUB_BRANCH = st.secrets["GITHUB"]["BRANCH"]
 GITHUB_TOKEN = st.secrets["GITHUB"]["TOKEN"]
+GITHUB_FILENAME = "ML_asos_dataset.csv"
 
 st.set_page_config(layout="centered")
 model = joblib.load("trained_model.pkl")
@@ -286,14 +287,14 @@ if st.button("조회하기"):
                 else:
                     df = pd.DataFrame([input_row])
 
-                df.to_csv(csv_path, index=False, encoding="utf-8-sig")
+                df.to_csv(GITHUB_FILENAME, index=False, encoding="utf-8-sig")
 
                 try:
                     # GitHub에 업로드
-                    with open(csv_path, "rb") as f:
+                    with open(GITHUB_FILENAME, "rb") as f:
                         content = f.read()
                     b64_content = base64.b64encode(content).decode("utf-8")
-                    api_url = f"https://api.github.com/repos/{GITHUB_USERNAME}/{GITHUB_REPO}/contents/{csv_path}"
+                    api_url = f"https://api.github.com/repos/{GITHUB_USERNAME}/{GITHUB_REPO}/contents/{GITHUB_FILENAME}"
 
                     # 기존 파일 SHA 가져오기 (있으면 업데이트)
                     r = requests.get(api_url, headers={"Authorization": f"Bearer {GITHUB_TOKEN}"})
@@ -302,7 +303,7 @@ if st.button("조회하기"):
                     else:
                         sha = None
 
-                    commit_msg = f"Update {csv_path} with new data for {ymd} {region}"
+                    commit_msg = f"Update {GITHUB_FILENAME} with new data for {ymd} {region}"
                     payload = {
                         "message": commit_msg,
                         "content": b64_content,
@@ -327,3 +328,4 @@ if st.button("조회하기"):
 
             except Exception as e:
                 st.error(f"❌ 처리 중 오류 발생: {e}")
+
