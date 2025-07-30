@@ -240,15 +240,14 @@ if st.button("조회하기"):
         c1.metric("예측 환자 수", f"{pred:.2f}명")
         c2.metric("위험 등급", risk)
 
-        # 2️⃣ 엑셀 업로드로 실제 환자수 추가 기록
-        with st.form(key=f"upload_form_{ymd}_{region}"):
-            uploaded_file = st.file_uploader("질병청 온열질환 엑셀 업로드 (시트명 = 지역명)", type=["xlsx"])
 if 'stored' not in st.session_state:
     st.session_state.stored = False
 
-uploaded_file = st.file_uploader("질병청 온열질환 엑셀 업로드 (시트명 = 지역명)", type=["xlsx"])
+with st.form(key="upload_form"):
+    uploaded_file = st.file_uploader("질병청 온열질환 엑셀 업로드 (시트명 = 지역명)", type=["xlsx"])
+    submit_button = st.form_submit_button(label="📅 업로드 및 학습 데이터 저장")
 
-if uploaded_file is not None and st.button("📅 업로드 및 학습 데이터 저장"):
+if uploaded_file is not None and submit_button:
     try:
         df = pd.read_excel(uploaded_file, sheet_name=region)
         df = df[df['일자'] == ymd]
