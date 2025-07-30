@@ -1,12 +1,12 @@
-name: Auto Train Model
+name: Train Model
 
 on:
+  workflow_dispatch:  # ✅ 수동 실행 버튼을 위해 필요
   schedule:
-    - cron: '0 0 * * *'  # 매일 자정 (UTC 기준)
-  workflow_dispatch:  # 수동 실행 버튼
+    - cron: '0 1 * * *'  # 매일 오전 10시 (KST)
 
 jobs:
-  train:
+  train-model:
     runs-on: ubuntu-latest
 
     steps:
