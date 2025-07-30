@@ -189,6 +189,7 @@ with tab1:
 # ====================================================================
 with tab2:
     st.header("📥 질병청 엑셀 업로드")
+st.write("🔐 현재 토큰 앞자리:", GITHUB_TOKEN[:8])
 
     with st.form(key="upload_form"):
         uploaded_file = st.file_uploader("엑셀 파일 (시트명은 지역명)", type=["xlsx"])
