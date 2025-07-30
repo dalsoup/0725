@@ -190,38 +190,6 @@ with tab1:
 with tab2:
     st.header("📥 질병청 엑셀 업로드")
 
-    # 토큰 범위를 확인하기 위해 현재 토큰 표시
-    st.write("🔑 현재 토큰 앞자리 확인:", GITHUB_TOKEN[:8] + "...")
-
-    # GitHub 인증 디버깅
-    st.subheader("🧪 GitHub 인증 테스트")
-    headers = {
-        "Authorization": f"Bearer {GITHUB_TOKEN}",
-        "Accept": "application/vnd.github+json"
-    }
-    user_resp = requests.get("https://api.github.com/user", headers=headers)
-    if user_resp.status_code == 200:
-        st.success("✅ 토큰 인증 성공")
-        st.write("사용자 정보:", user_resp.json()["login"])
-    else:
-        st.error(f"❌ 인증 실패: {user_resp.status_code}")
-        st.code(user_resp.text)
-
-    # 저장소 및 브랜치 상태 점검
-    st.subheader("🔑 GitHub 인증 상태 점검")
-
-    # 2. 저장소 확인
-    repo_url = f"https://api.github.com/repos/{GITHUB_USERNAME}/{GITHUB_REPO}"
-    repo_resp = requests.get(repo_url, headers=headers)
-    st.write("📁 저장소 상태:", repo_resp.status_code)
-    st.code(repo_resp.text)
-
-    # 3. 브랜치 확인
-    branch_url = f"https://api.github.com/repos/{GITHUB_USERNAME}/{GITHUB_REPO}/branches/{GITHUB_BRANCH}"
-    branch_resp = requests.get(branch_url, headers=headers)
-    st.write("🌿 브랜치 상태:", branch_resp.status_code)
-    st.code(branch_resp.text)
-
     with st.form(key="upload_form"):
         uploaded_file = st.file_uploader("엑셀 파일 (시트명은 지역명)", type=["xlsx"])
         region = st.selectbox("지역 선택 (시트명과 동일)", list(region_to_stn_id.keys()), key="region_excel")
