@@ -230,8 +230,8 @@ if st.button("조회하기"):
 
         # 2️⃣ 엑셀 업로드로 실제 환자수 추가 기록
         with st.form(key=f"upload_form_{ymd}_{region}"):
-    uploaded_file = st.file_uploader("질병청 온열질환 엑셀 업로드 (시트명 = 지역명)", type=["xlsx"])
-    submit_upload = st.form_submit_button("📥 업로드 및 학습 데이터 저장")
+            uploaded_file = st.file_uploader("질병청 온열질환 엑셀 업로드 (시트명 = 지역명)", type=["xlsx"])
+            submit_upload = st.form_submit_button("📥 업로드 및 학습 데이터 저장")
         if uploaded_file and submit_upload:
             try:
                 sheet_df = pd.read_excel(uploaded_file, sheet_name=region, engine="openpyxl")
