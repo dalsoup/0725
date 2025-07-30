@@ -229,7 +229,7 @@ if st.button("조회하기"):
         c2.metric("위험 등급", risk)
 
         # 2️⃣ 엑셀 업로드로 실제 환자수 추가 기록
-        uploaded_file = st.file_uploader("질병청 온열질환 엑셀 업로드 (시트명 = 지역명)", type=["xlsx"])
+        uploaded_file = st.file_uploader("질병청 온열질환 엑셀 업로드 (시트명 = 지역명)", type=["xlsx"], key=f"uploader_{ymd}_{region}")
         if uploaded_file:
             try:
                 sheet_df = pd.read_excel(uploaded_file, sheet_name=region, engine="openpyxl")
