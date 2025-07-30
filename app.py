@@ -79,6 +79,8 @@ def get_weather(region_name, target_date):
         r = requests.get("http://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getVilageFcst", params=params, timeout=10, verify=False)
         items = r.json().get("response", {}).get("body", {}).get("items", {}).get("item", [])
         df = pd.DataFrame(items)
+        st.write("📥 raw items:", items[:3])  # 상위 3개만 출력
+        st.write("📥 df.columns:", df.columns.tolist())
 
         df["fcstDate"] = df["fcstDate"].astype(str)
         target_str = target_date.strftime("%Y%m%d")
