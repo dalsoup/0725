@@ -65,7 +65,7 @@ div.st-cj,
 
 # ----------- MODEL LOAD -----------
 model = joblib.load("trained_model.pkl")
-feature_names = joblib.load("feature_names.pkl")  # ✅ 추가
+feature_names = joblib.load("feature_names.pkl")  # ✅ feature 순서
 
 # ----------- API KEY -----------
 KMA_API_KEY = unquote(st.secrets["KMA"]["API_KEY"])
@@ -169,6 +169,7 @@ if predict_clicked and region and date_selected:
     col3.metric("평균기온", f"{avg_temp:.1f}℃" if avg_temp is not None else "-℃")
     col4.metric("습도", f"{weather.get('REH', 0):.1f}%")
 
+    # ---- 예측 입력 생성
     input_df = pd.DataFrame([{ 
         "광역자치단체": region,
         "최고체감온도(°C)": weather.get("TMX", 0) + 1.5,
@@ -178,8 +179,11 @@ if predict_clicked and region and date_selected:
         "평균상대습도(%)": weather.get("REH", 0)
     }])
 
+    # ✅ 컬럼명 학습 모델 기준으로 변경
+    input_df.rename(columns={"평균상대습도(%)": "습도(%)"}, inplace=True)
+
     try:
-        X_input = input_df[feature_names]  # ✅ 피처 순서 정렬
+        X_input = input_df[feature_names]
         pred = model.predict(X_input)[0]
     except Exception as e:
         st.error(f"예측 중 오류 발생: {str(e)}")
