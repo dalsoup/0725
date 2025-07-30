@@ -76,6 +76,11 @@ def get_weather(region_name, target_date):
     nx, ny = convert_latlon_to_xy(*latlon)
     base_date, base_time = get_latest_base_datetime(target_date)
 
+    # ✅ 디버그 출력 시작
+    st.write("📡 요청 base_date:", base_date)
+    st.write("🕓 요청 base_time:", base_time)
+    st.write("🎯 예측 대상 날짜:", target_date.strftime("%Y%m%d"))
+
     params = {
         "serviceKey": KMA_API_KEY,
         "numOfRows": "300", "pageNo": "1", "dataType": "JSON",
@@ -87,6 +92,12 @@ def get_weather(region_name, target_date):
         r = requests.get("http://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getVilageFcst", params=params, timeout=10, verify=False)
         items = r.json().get("response", {}).get("body", {}).get("items", {}).get("item", [])
         df = pd.DataFrame(items)
+
+        # ✅ 추가 로그 출력
+        st.write("📦 받은 행 개수:", len(df))
+        if not df.empty:
+            st.write("📅 받은 fcstDate 목록:", df["fcstDate"].unique())
+            st.write("🧩 받은 category 목록:", df["category"].unique())
 
         # 🔥 핵심: fcstDate 비교 위해 문자열 변환
         df["fcstDate"] = df["fcstDate"].astype(str)
