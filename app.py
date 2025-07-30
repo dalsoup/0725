@@ -249,98 +249,91 @@ with st.form(key="upload_form"):
 
 if uploaded_file is not None and submit_button:
     try:
-        df_raw = pd.read_excel(uploaded_file, sheet_name=region, header=None)
+        df = pd.read_excel(uploaded_file, sheet_name=region, header=2)
+        df = df.reset_index(drop=True)
 
-        # '일자' 추출용 첫 열 분리
-        date_col_series = df_raw.iloc[3:, 0].copy()
-        date_col_series.name = "일자"
+        st.write("🔍 컬럼 확인:", list(df.columns))
 
-        # 본문 데이터 분리 및 컬럼 설정
-        df = df_raw.iloc[3:, 1:].copy()
-        df.columns = df_raw.iloc[2, 1:].astype(str).str.replace("\\n", "", regex=False).str.replace("\\r", "", regex=False).str.replace(" ", "", regex=False).str.strip()
-
-        df.insert(0, "일자", date_col_series.values)
-
-        df.columns = df.columns.astype(str).str.replace("\\n", "", regex=False).str.replace("\\r", "", regex=False).str.replace(" ", "", regex=False).str.strip()
-
-        candidate_cols = list(df.columns)
-        date_col = next((col for col in candidate_cols if "일자" in col), None)
-        patient_col = next((col for col in candidate_cols if "합계" in col), None)
-
-        st.write("🔍 컬럼 확인:", candidate_cols)
-        st.write("📌 인식된 일자 컬럼:", date_col)
-        st.write("📌 인식된 환자수 컬럼:", patient_col)
-
-        if not date_col or not patient_col:
-            st.error("❌ 엑셀 파일에 '일자' 또는 '환자수' 컬럼이 없습니다.")
+        # '일자' 컬럼 확인
+        if "일자" not in df.columns:
+            st.error("❌ '일자' 컬럼이 없습니다.")
         else:
-            df[date_col] = pd.to_datetime(df[date_col], errors='coerce').dt.strftime("%Y-%m-%d")
-            df = df[df[date_col] == ymd]
+            # '합계' 값이 포함된 컬럼명을 탐색
+            patient_col = next((col for col in df.columns if str(df[col].iloc[0]).strip() == "합계"), None)
 
-            if df.empty:
-                st.warning("📭 선택한 날짜에 해당하는 환자 수 정보가 없습니다.")
+            st.write("📌 인식된 환자수 컬럼:", patient_col)
+
+            if patient_col is None:
+                st.error("❌ '합계' 값이 있는 열을 찾을 수 없습니다.")
             else:
-                환자수 = int(df.iloc[0][patient_col])
-                input_row = {
-                    "일자": ymd,
-                    "지역": region,
-                    "최고체감온도(°C)": tmx + 1.5 if tmx else 0,
-                    "최고기온(°C)": tmx or 0,
-                    "평균기온(°C)": avg_temp or 0,
-                    "최저기온(°C)": tmn or 0,
-                    "평균상대습도(%)": weather.get("REH", 0),
-                    "환자수": 환자수
-                }
+                df = df[1:]  # '합계'가 있는 헤더 행 제거
+                df["일자"] = pd.to_datetime(df["일자"], errors='coerce').dt.strftime("%Y-%m-%d")
+                df = df[df["일자"] == ymd]
 
-                st.success(f"✅ {ymd} {region} → 환자수 {환자수}명 기록 완료")
-                st.dataframe(pd.DataFrame([input_row]))
-
-                csv_path = "ML_asos_dataset.csv"
-                if os.path.exists(csv_path):
-                    existing = pd.read_csv(csv_path)
-                    existing = existing[~((existing["일자"] == ymd) & (existing["지역"] == region))]
-                    df = pd.concat([existing, pd.DataFrame([input_row])], ignore_index=True)
+                if df.empty:
+                    st.warning("📭 선택한 날짜에 해당하는 환자 수 정보가 없습니다.")
                 else:
-                    df = pd.DataFrame([input_row])
-
-                df.to_csv(GITHUB_FILENAME, index=False, encoding="utf-8-sig")
-
-                try:
-                    with open(GITHUB_FILENAME, "rb") as f:
-                        content = f.read()
-                    b64_content = base64.b64encode(content).decode("utf-8")
-                    api_url = f"https://api.github.com/repos/{GITHUB_USERNAME}/{GITHUB_REPO}/contents/{GITHUB_FILENAME}"
-
-                    r = requests.get(api_url, headers={"Authorization": f"Bearer {GITHUB_TOKEN}"})
-                    if r.status_code == 200:
-                        sha = r.json()["sha"]
-                    else:
-                        sha = None
-
-                    commit_msg = f"Update {GITHUB_FILENAME} with new data for {ymd} {region}"
-                    payload = {
-                        "message": commit_msg,
-                        "content": b64_content,
-                        "branch": GITHUB_BRANCH
+                    환자수 = int(df.iloc[0][patient_col])
+                    input_row = {
+                        "일자": ymd,
+                        "지역": region,
+                        "최고체감온도(°C)": tmx + 1.5 if tmx else 0,
+                        "최고기온(°C)": tmx or 0,
+                        "평균기온(°C)": avg_temp or 0,
+                        "최저기온(°C)": tmn or 0,
+                        "평균상대습도(%)": weather.get("REH", 0),
+                        "환자수": 환자수
                     }
-                    if sha:
-                        payload["sha"] = sha
 
-                    headers = {
-                        "Authorization": f"Bearer {GITHUB_TOKEN}",
-                        "Accept": "application/vnd.github+json"
-                    }
-                    r = requests.put(api_url, headers=headers, json=payload)
+                    st.success(f"✅ {ymd} {region} → 환자수 {환자수}명 기록 완료")
+                    st.dataframe(pd.DataFrame([input_row]))
 
-                    if r.status_code in [200, 201]:
-                        st.session_state.stored = True
-                        st.success("✅ GitHub 저장 완료")
-                        st.info(f"🔗 [파일 바로 확인하기](https://github.com/{GITHUB_USERNAME}/{GITHUB_REPO}/blob/{GITHUB_BRANCH}/{GITHUB_FILENAME})")
+                    csv_path = "ML_asos_dataset.csv"
+                    if os.path.exists(csv_path):
+                        existing = pd.read_csv(csv_path)
+                        existing = existing[~((existing["일자"] == ymd) & (existing["지역"] == region))]
+                        df = pd.concat([existing, pd.DataFrame([input_row])], ignore_index=True)
                     else:
-                        st.warning(f"⚠️ GitHub 저장 실패: {r.status_code} {r.text[:200]}")
+                        df = pd.DataFrame([input_row])
 
-                except Exception as e:
-                    st.error(f"❌ GitHub 업로드 중 오류: {e}")
+                    df.to_csv(GITHUB_FILENAME, index=False, encoding="utf-8-sig")
+
+                    try:
+                        with open(GITHUB_FILENAME, "rb") as f:
+                            content = f.read()
+                        b64_content = base64.b64encode(content).decode("utf-8")
+                        api_url = f"https://api.github.com/repos/{GITHUB_USERNAME}/{GITHUB_REPO}/contents/{GITHUB_FILENAME}"
+
+                        r = requests.get(api_url, headers={"Authorization": f"Bearer {GITHUB_TOKEN}"})
+                        if r.status_code == 200:
+                            sha = r.json()["sha"]
+                        else:
+                            sha = None
+
+                        commit_msg = f"Update {GITHUB_FILENAME} with new data for {ymd} {region}"
+                        payload = {
+                            "message": commit_msg,
+                            "content": b64_content,
+                            "branch": GITHUB_BRANCH
+                        }
+                        if sha:
+                            payload["sha"] = sha
+
+                        headers = {
+                            "Authorization": f"Bearer {GITHUB_TOKEN}",
+                            "Accept": "application/vnd.github+json"
+                        }
+                        r = requests.put(api_url, headers=headers, json=payload)
+
+                        if r.status_code in [200, 201]:
+                            st.session_state.stored = True
+                            st.success("✅ GitHub 저장 완료")
+                            st.info(f"🔗 [파일 바로 확인하기](https://github.com/{GITHUB_USERNAME}/{GITHUB_REPO}/blob/{GITHUB_BRANCH}/{GITHUB_FILENAME})")
+                        else:
+                            st.warning(f"⚠️ GitHub 저장 실패: {r.status_code} {r.text[:200]}")
+
+                    except Exception as e:
+                        st.error(f"❌ GitHub 업로드 중 오류: {e}")
 
     except Exception as e:
         st.error(f"❌ 처리 중 오류 발생: {e}")
