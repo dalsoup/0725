@@ -1,9 +1,9 @@
 name: Train Model
 
 on:
-  workflow_dispatch:  # ✅ 수동 실행
+  workflow_dispatch:  # ✅ 수동 실행 버튼 활성화
   schedule:
-    - cron: '0 8 * * *'  # ✅ 한국시간 오후 5시 (UTC 08:00)
+    - cron: '0 8 * * *'  # ✅ 한국시간 오후 5시 (UTC 기준 08:00)
 
 jobs:
   train-model:
@@ -20,8 +20,8 @@ jobs:
 
       - name: 📥 Install dependencies
         run: |
-           python -m pip install --upgrade pip
-           pip install pandas joblib openpyxl requests scikit-learn==1.4.2 xgboost
+          python -m pip install --upgrade pip
+          pip install pandas joblib openpyxl requests scikit-learn xgboost
 
       - name: 🤖 Run training script
         run: python train_model.py
