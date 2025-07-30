@@ -190,9 +190,8 @@ with tab1:
 with tab2:
     st.header("📥 질병청 엑셀 업로드")
 
- st.write("🔑 현재 토큰 앞자리 확인:", GITHUB_TOKEN[:8] + "...")
-import requests
-
+    # ✅ 여기에 정확한 위치에 들여쓰기 맞춰서 추가
+    st.write("🔑 현재 토큰 앞자리 확인:", GITHUB_TOKEN[:8] + "...")
 st.subheader("🧪 GitHub 인증 테스트")
 headers = {
     "Authorization": f"Bearer {GITHUB_TOKEN}",
