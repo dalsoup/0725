@@ -181,7 +181,7 @@ if st.button("조회하기"):
         stn_id = region_to_stn_id[region]
         ymd = date_selected.strftime("%Y%m%d")
         url = f"https://apis.data.go.kr/1360000/AsosDalyInfoService/getWthrDataList?serviceKey={ASOS_API_KEY}&pageNo=1&numOfRows=10&dataType=JSON&dataCd=ASOS&dateCd=DAY&startDt={ymd}&endDt={ymd}&stnIds={stn_id}"
-        r = requests.get(url, timeout=10)
+        r = requests.get(url, timeout=10, verify=False)
         j = r.json()
         item = j.get("response", {}).get("body", {}).get("items", {}).get("item", [])[0]
 
