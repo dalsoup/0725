@@ -6,17 +6,17 @@ import requests
 import math
 from urllib.parse import unquote
 
-# ----------- PAGE STYLE -----------
+# ----------- 설정 -----------
 st.set_page_config(layout="centered")
 
-# ----------- MODEL & FEATURES -----------
+# ----------- 모델 로드 -----------
 model = joblib.load("trained_model.pkl")
 feature_names = joblib.load("feature_names.pkl")
 
-# ----------- API KEY -----------
+# ----------- 기상청 API 키 -----------
 KMA_API_KEY = unquote(st.secrets["KMA"]["API_KEY"])
 
-# ----------- FUNCTIONS -----------
+# ----------- 함수 정의 -----------
 def get_risk_level(pred):
     if pred == 0: return "🟢 매우 낮음"
     elif pred <= 2: return "🟡 낮음"
@@ -52,7 +52,8 @@ def get_weather(region_name, target_date):
     params = {
         "serviceKey": KMA_API_KEY,
         "numOfRows": "300", "pageNo": "1", "dataType": "JSON",
-        "base_date": base_date, "base_time": base_time, "nx": nx, "ny": ny
+        "base_date": base_date, "base_time": base_time,
+        "nx": nx, "ny": ny
     }
     try:
         r = requests.get("http://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getVilageFcst", params=params, timeout=10, verify=False)
@@ -64,7 +65,7 @@ def get_weather(region_name, target_date):
         for cat in ["TMX", "TMN", "REH", "T3H"]:
             vals = df[df["category"] == cat]["fcstValue"].astype(float)
             if not vals.empty:
-                summary[cat] = vals.mean() if cat == "REH" or cat == "T3H" else vals.iloc[0]
+                summary[cat] = vals.mean() if cat in ["REH", "T3H"] else vals.iloc[0]
         return summary
     except:
         return {}
@@ -88,10 +89,11 @@ st.title("🔥 온열질환 예측 대시보드")
 region = st.selectbox("지역 선택", list(region_to_latlon.keys()))
 today = datetime.date.today()
 date_selected = st.date_input("예측 날짜", value=today, min_value=today, max_value=today + datetime.timedelta(days=5))
+
 if st.button("예측하기"):
     weather = get_weather(region, date_selected)
     if not weather:
-        st.error("기상청 데이터를 불러오지 못했습니다.")
+        st.error("기상 데이터를 불러올 수 없습니다.")
         st.stop()
 
     tmx, tmn = weather.get("TMX"), weather.get("TMN")
@@ -105,18 +107,26 @@ if st.button("예측하기"):
         "평균상대습도(%)": weather.get("REH", 0)
     }])
 
-    # 🛡 feature 이름 누락 확인
+    # 피처 확인
     missing = [col for col in feature_names if col not in input_df.columns]
     if missing:
-        st.error(f"입력 피처 누락: {missing}")
+        st.error(f"입력 누락 피처: {missing}")
         st.stop()
 
-    X_input = input_df[feature_names]
+    X_input = input_df[feature_names].copy()
+
+    # 💥 XGBoost 호환용 이름 정렬
+    try:
+        X_input.columns = model.get_booster().feature_names
+    except:
+        st.error("모델이 XGBoost 기반이 아니거나 feature_names가 일치하지 않습니다.")
+        st.stop()
+
     pred = model.predict(X_input)[0]
     risk = get_risk_level(pred)
 
-    # ----------- 결과 출력 -----------
-    st.subheader("예측 결과")
+    # ----------- 출력 -----------
+    st.subheader("📊 예측 결과")
     st.metric("예측 온열질환자 수", f"{pred:.2f}명")
     st.metric("위험 등급", risk)
     st.caption(f"전년도 평균(6.8명) 대비 {'+' if pred - 6.8 >= 0 else ''}{pred - 6.8:.1f}명")
