@@ -4,13 +4,15 @@ import datetime
 import joblib
 import requests
 import math
-from urllib.parse import unquote
 import os
 import base64
+from urllib.parse import unquote
 
+# ----------------------- 📦 설정 -----------------------
 st.set_page_config(layout="centered")
 model = joblib.load("trained_model.pkl")
 feature_names = joblib.load("feature_names.pkl")
+
 KMA_API_KEY = unquote(st.secrets["KMA"]["API_KEY"])
 ASOS_API_KEY = unquote(st.secrets["ASOS"]["API_KEY"])
 GITHUB_USERNAME = st.secrets["GITHUB"]["USERNAME"]
@@ -18,12 +20,6 @@ GITHUB_REPO = st.secrets["GITHUB"]["REPO"]
 GITHUB_BRANCH = st.secrets["GITHUB"]["BRANCH"]
 GITHUB_TOKEN = st.secrets["GITHUB"]["TOKEN"]
 GITHUB_FILENAME = "ML_asos_dataset.csv"
-
-st.set_page_config(layout="centered")
-model = joblib.load("trained_model.pkl")
-feature_names = joblib.load("feature_names.pkl")
-KMA_API_KEY = unquote(st.secrets["KMA"]["API_KEY"])
-ASOS_API_KEY = unquote(st.secrets["ASOS"]["API_KEY"])
 
 region_to_stn_id = {
     "서울특별시": 108, "부산광역시": 159, "대구광역시": 143, "인천광역시": 112,
@@ -41,309 +37,236 @@ region_to_latlon = {
     "경상남도": (35.4606, 128.2132), "제주특별자치도": (33.4996, 126.5312)
 }
 
+# ----------------------- 🔁 공통 함수 -----------------------
+def convert_latlon_to_xy(lat, lon):
+    RE, GRID = 6371.00877, 5.0
+    SLAT1, SLAT2, OLON, OLAT = 30.0, 60.0, 126.0, 38.0
+    XO, YO = 43, 136
+    DEGRAD = math.pi / 180.0
+    re = RE / GRID
+    slat1, slat2 = SLAT1 * DEGRAD, SLAT2 * DEGRAD
+    olon, olat = OLON * DEGRAD, OLAT * DEGRAD
+    sn = math.log(math.cos(slat1)/math.cos(slat2)) / math.log(math.tan(math.pi/4+slat2/2)/math.tan(math.pi/4+slat1/2))
+    sf = math.tan(math.pi/4+slat1/2)**sn * math.cos(slat1)/sn
+    ro = re * sf / (math.tan(math.pi/4+olat/2)**sn)
+    ra = re * sf / (math.tan(math.pi/4+lat*DEGRAD/2)**sn)
+    theta = lon * DEGRAD - olon
+    if theta > math.pi: theta -= 2*math.pi
+    if theta < -math.pi: theta += 2*math.pi
+    theta *= sn
+    x = ra * math.sin(theta) + XO + 0.5
+    y = ro - ra * math.cos(theta) + YO + 0.5
+    return int(x), int(y)
+
+def get_fixed_base_datetime(target_date):
+    today = datetime.date.today()
+    now = datetime.datetime.now()
+    if target_date == today:
+        hour = now.hour
+        if hour >= 23: bt = "2300"
+        elif hour >= 20: bt = "2000"
+        elif hour >= 17: bt = "1700"
+        elif hour >= 14: bt = "1400"
+        elif hour >= 11: bt = "1100"
+        elif hour >= 8: bt = "0800"
+        elif hour >= 5: bt = "0500"
+        else: bt = "0200"
+        return today.strftime("%Y%m%d"), bt
+    else:
+        return today.strftime("%Y%m%d"), "0500"
+
+def get_weather(region_name, target_date):
+    latlon = region_to_latlon.get(region_name, (37.5665, 126.9780))
+    nx, ny = convert_latlon_to_xy(*latlon)
+    base_date, base_time = get_fixed_base_datetime(target_date)
+    params = {
+        "serviceKey": KMA_API_KEY,
+        "numOfRows": "1000",
+        "pageNo": "1",
+        "dataType": "JSON",
+        "base_date": base_date,
+        "base_time": base_time,
+        "nx": nx,
+        "ny": ny
+    }
+    try:
+        r = requests.get("http://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getVilageFcst", params=params, timeout=10, verify=False)
+        items = r.json().get("response", {}).get("body", {}).get("items", {}).get("item", [])
+        df = pd.DataFrame(items)
+        df["fcstDate"] = df["fcstDate"].astype(str)
+        target_str = target_date.strftime("%Y%m%d")
+        if target_str not in df["fcstDate"].values:
+            return {}, base_date, base_time
+        df = df[df["fcstDate"] == target_str]
+        df = df[df["category"].isin(["T3H", "TMX", "TMN", "REH"])]
+        summary = {}
+        for cat in ["TMX", "TMN", "REH", "T3H"]:
+            vals = df[df["category"] == cat]["fcstValue"].astype(float)
+            if not vals.empty:
+                summary[cat] = vals.mean() if cat in ["REH", "T3H"] else vals.iloc[0]
+        return summary, base_date, base_time
+    except:
+        return {}, base_date, base_time
+
+def get_asos_weather(region, ymd):
+    stn_id = region_to_stn_id[region]
+    url = f"http://apis.data.go.kr/1360000/AsosDalyInfoService/getWthrDataList?serviceKey={ASOS_API_KEY}&pageNo=1&numOfRows=10&dataType=JSON&dataCd=ASOS&dateCd=DAY&startDt={ymd}&endDt={ymd}&stnIds={stn_id}"
+    r = requests.get(url, timeout=10, verify=False)
+    j = r.json()
+    item = j.get("response", {}).get("body", {}).get("items", {}).get("item", [])[0]
+    return {
+        "TMX": float(item["maxTa"]),
+        "TMN": float(item["minTa"]),
+        "REH": float(item["avgRhm"])
+    }
+
+def get_risk_level(pred):
+    if pred == 0: return "🟢 매우 낮음"
+    elif pred <= 2: return "🟡 낮음"
+    elif pred <= 5: return "🟠 보통"
+    elif pred <= 10: return "🔴 높음"
+    else: return "🔥 매우 높음"
+
+def predict_from_weather(tmx, tmn, reh):
+    avg_temp = round((tmx + tmn) / 2, 1)
+    input_df = pd.DataFrame([{ 
+        "최고체감온도(°C)": tmx + 1.5,
+        "최고기온(°C)": tmx,
+        "평균기온(°C)": avg_temp,
+        "최저기온(°C)": tmn,
+        "평균상대습도(%)": reh
+    }])
+    X = input_df[feature_names].copy()
+    X.columns = model.get_booster().feature_names
+    pred = model.predict(X)[0]
+    return pred, avg_temp, input_df
+
+# ----------------------- 🧭 UI 시작 -----------------------
 st.title("🔥 온열질환 예측 및 학습데이터 기록기")
-region = st.selectbox("지역 선택", list(region_to_stn_id.keys()))
-today = datetime.date.today()
-min_day = datetime.date(2021, 7, 1)
-max_day = today + datetime.timedelta(days=5)
-date_selected = st.date_input("날짜 선택", value=today, min_value=min_day, max_value=max_day)
+tab1, tab2 = st.tabs(["📊 예측하기", "📥 학습데이터 기록"])
+# ====================================================================
+# 🔮 예측 탭
+# ====================================================================
+with tab1:
+    st.header("📊 온열질환자 예측")
+    region = st.selectbox("지역 선택", list(region_to_stn_id.keys()), key="region_pred")
+    today = datetime.date.today()
+    date_selected = st.date_input("날짜 선택", value=today, min_value=datetime.date(2021, 7, 1), max_value=today + datetime.timedelta(days=5))
 
-use_asos = date_selected < today
+    if st.button("🔍 예측하기"):
+        if date_selected >= today:
+            weather, base_date, base_time = get_weather(region, date_selected)
+        else:
+            ymd = date_selected.strftime("%Y%m%d")
+            weather = get_asos_weather(region, ymd)
 
-# --- 예측 or 기록 분기 ---
-if st.button("조회하기"):
-    if not use_asos:
-        st.info("📡 오늘 이후 → 단기예보 API 기반 예측")
-
-        def convert_latlon_to_xy(lat, lon):
-            RE, GRID = 6371.00877, 5.0
-            SLAT1, SLAT2, OLON, OLAT = 30.0, 60.0, 126.0, 38.0
-            XO, YO = 43, 136
-            DEGRAD = math.pi / 180.0
-            re = RE / GRID
-            slat1, slat2 = SLAT1 * DEGRAD, SLAT2 * DEGRAD
-            olon, olat = OLON * DEGRAD, OLAT * DEGRAD
-            sn = math.log(math.cos(slat1)/math.cos(slat2)) / math.log(math.tan(math.pi/4+slat2/2)/math.tan(math.pi/4+slat1/2))
-            sf = math.tan(math.pi/4+slat1/2)**sn * math.cos(slat1)/sn
-            ro = re * sf / (math.tan(math.pi/4+olat/2)**sn)
-            ra = re * sf / (math.tan(math.pi/4+lat*DEGRAD/2)**sn)
-            theta = lon * DEGRAD - olon
-            if theta > math.pi: theta -= 2*math.pi
-            if theta < -math.pi: theta += 2*math.pi
-            theta *= sn
-            x = ra * math.sin(theta) + XO + 0.5
-            y = ro - ra * math.cos(theta) + YO + 0.5
-            return int(x), int(y)
-
-        def get_fixed_base_datetime(target_date):
-            today = datetime.date.today()
-            now = datetime.datetime.now()
-
-            if target_date == today:
-                hour = now.hour
-                if hour >= 23: bt = "2300"
-                elif hour >= 20: bt = "2000"
-                elif hour >= 17: bt = "1700"
-                elif hour >= 14: bt = "1400"
-                elif hour >= 11: bt = "1100"
-                elif hour >= 8: bt = "0800"
-                elif hour >= 5: bt = "0500"
-                else: bt = "0200"
-                return today.strftime("%Y%m%d"), bt
-            else:
-                return today.strftime("%Y%m%d"), "0500"
-
-        def get_weather(region_name, target_date):
-            latlon = region_to_latlon.get(region_name, (37.5665, 126.9780))
-            nx, ny = convert_latlon_to_xy(*latlon)
-            base_date, base_time = get_fixed_base_datetime(target_date)
-
-            params = {
-                "serviceKey": KMA_API_KEY,
-                "numOfRows": "1000",
-                "pageNo": "1",
-                "dataType": "JSON",
-                "base_date": base_date,
-                "base_time": base_time,
-                "nx": nx,
-                "ny": ny
-            }
-
-            try:
-                r = requests.get("http://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getVilageFcst", params=params, timeout=10, verify=False)
-                items = r.json().get("response", {}).get("body", {}).get("items", {}).get("item", [])
-                df = pd.DataFrame(items)
-                df["fcstDate"] = df["fcstDate"].astype(str)
-                target_str = target_date.strftime("%Y%m%d")
-
-                if target_str not in df["fcstDate"].values:
-                    st.error(f"❌ 예보 데이터에 {target_str} 날짜가 포함되어 있지 않습니다.")
-                    return {}, base_date, base_time
-
-                df = df[df["fcstDate"] == target_str]
-                df = df[df["category"].isin(["T3H", "TMX", "TMN", "REH"])]
-
-                summary = {}
-                for cat in ["TMX", "TMN", "REH", "T3H"]:
-                    vals = df[df["category"] == cat]["fcstValue"].astype(float)
-                    if not vals.empty:
-                        summary[cat] = vals.mean() if cat in ["REH", "T3H"] else vals.iloc[0]
-
-                return summary, base_date, base_time
-
-            except Exception as e:
-                st.error(f"⚠️ API 호출 실패: {e}")
-                return {}, base_date, base_time
-
-        def calculate_avg_temp(tmx, tmn):
-            if tmx is not None and tmn is not None:
-                return round((tmx + tmn) / 2, 1)
-            return None
-
-        weather, base_date, base_time = get_weather(region, date_selected)
         if not weather:
+            st.error("❌ 기상 정보 없음")
             st.stop()
 
-        st.caption(f"📡 사용된 예보 기준 시각 → base_date: `{base_date}`, base_time: `{base_time}`")
-
-        tmx, tmn = weather.get("TMX"), weather.get("TMN")
-        avg_temp = calculate_avg_temp(tmx, tmn)
-
-        st.markdown("#### ☁️ 오늘의 기상정보")
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric("최고기온", f"{tmx:.1f}℃" if tmx else "-")
-        col2.metric("최저기온", f"{tmn:.1f}℃" if tmn else "-")
-        col3.metric("평균기온", f"{avg_temp:.1f}℃" if avg_temp is not None else "-")
-        col4.metric("습도", f"{weather.get('REH', 0):.1f}%" if weather.get("REH") is not None else "-")
-
-        input_df = pd.DataFrame([{
-            "최고체감온도(°C)": tmx + 1.5 if tmx else 0,
-            "최고기온(°C)": tmx or 0,
-            "평균기온(°C)": avg_temp or 0,
-            "최저기온(°C)": tmn or 0,
-            "평균상대습도(%)": weather.get("REH", 0)
-        }])
-
-        st.subheader("🧪 모델 입력값 확인")
-        st.dataframe(input_df)
-
-        X_input = input_df[feature_names].copy()
-        X_input.columns = model.get_booster().feature_names
-
-        pred = model.predict(X_input)[0]
-        def get_risk_level(pred):
-            if pred == 0: return "🟢 매우 낮음"
-            elif pred <= 2: return "🟡 낮음"
-            elif pred <= 5: return "🟠 보통"
-            elif pred <= 10: return "🔴 높음"
-            else: return "🔥 매우 높음"
+        tmx, tmn, reh = weather.get("TMX", 0), weather.get("TMN", 0), weather.get("REH", 0)
+        pred, avg_temp, input_df = predict_from_weather(tmx, tmn, reh)
         risk = get_risk_level(pred)
 
-        st.markdown("#### 💡 온열질환자 예측")
+        st.markdown("#### ☁️ 기상정보")
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("최고기온", f"{tmx:.1f}℃")
+        col2.metric("최저기온", f"{tmn:.1f}℃")
+        col3.metric("평균기온", f"{avg_temp:.1f}℃")
+        col4.metric("습도", f"{reh:.1f}%")
+
+        with st.expander("🧪 입력값 확인"):
+            st.dataframe(input_df)
+
+        st.markdown("#### 💡 예측 결과")
         c1, c2 = st.columns(2)
         c1.metric("예측 환자 수", f"{pred:.2f}명")
         c2.metric("위험 등급", risk)
         st.caption(f"전년도 평균(6.8명) 대비 {'+' if pred - 6.8 >= 0 else ''}{pred - 6.8:.1f}명")
 
-    else:
-        st.info("🕰 과거 날짜 → ASOS + 엑셀 기반 학습데이터 기록")
+# ====================================================================
+# 📥 학습 데이터 기록 탭
+# ====================================================================
+with tab2:
+    st.header("📥 질병청 엑셀 업로드")
+    with st.form(key="upload_form"):
+        uploaded_file = st.file_uploader("엑셀 파일 (시트명은 지역명)", type=["xlsx"])
+        region = st.selectbox("지역 선택 (시트명과 동일)", list(region_to_stn_id.keys()), key="region_excel")
+        date_selected = st.date_input("기록할 날짜", value=today, key="record_date")
+        submit_button = st.form_submit_button("📅 저장하기")
 
-        # 1️⃣ ASOS 기반 예측 먼저 수행 (예측 모드와 동일)
-        st.markdown("#### ☁️ 오늘의 기상정보 (ASOS 기준)")
-        stn_id = region_to_stn_id[region]
-        ymd = date_selected.strftime("%Y%m%d")
-        url = f"http://apis.data.go.kr/1360000/AsosDalyInfoService/getWthrDataList?serviceKey={ASOS_API_KEY}&pageNo=1&numOfRows=10&dataType=JSON&dataCd=ASOS&dateCd=DAY&startDt={ymd}&endDt={ymd}&stnIds={stn_id}"
-        r = requests.get(url, timeout=10, verify=False)
-        if "application/json" not in r.headers.get("Content-Type", ""):
-            st.error("❌ JSON 형식이 아닌 응답입니다. 아래 내용을 확인하세요.")
-            st.text(r.text[:500])
-            st.stop()
-        j = r.json()
-        item = j.get("response", {}).get("body", {}).get("items", {}).get("item", [])[0]
+    if uploaded_file and submit_button:
+        try:
+            df_raw = pd.read_excel(uploaded_file, sheet_name=region, header=None)
+            df_raw.columns = df_raw.iloc[2]
+            df = df_raw[3:].reset_index(drop=True)
+            df.columns = df.columns.map(lambda x: str(x).strip().replace("\n", "").replace(" ", ""))
+            if not any("일자" in col for col in df.columns):
+                st.error("❌ '일자' 컬럼이 없습니다.")
+                st.stop()
 
-        tmx = float(item["maxTa"])
-        tmn = float(item["minTa"])
-        reh = float(item["avgRhm"])
-        avg = round((tmx + tmn) / 2, 1)
-
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric("최고기온", f"{tmx:.1f}℃")
-        col2.metric("최저기온", f"{tmn:.1f}℃")
-        col3.metric("평균기온", f"{avg:.1f}℃")
-        col4.metric("습도", f"{reh:.1f}%")
-
-        input_df = pd.DataFrame([{
-            "최고체감온도(°C)": round(tmx + 1.5, 1),
-            "최고기온(°C)": tmx,
-            "평균기온(°C)": avg,
-            "최저기온(°C)": tmn,
-            "평균상대습도(%)": reh
-        }])
-
-        st.subheader("🧪 모델 입력값 확인")
-        st.dataframe(input_df)
-
-        X_input = input_df[feature_names].copy()
-        X_input.columns = model.get_booster().feature_names
-
-        pred = model.predict(X_input)[0]
-        def get_risk_level(pred):
-            if pred == 0: return "🟢 매우 낮음"
-            elif pred <= 2: return "🟡 낮음"
-            elif pred <= 5: return "🟠 보통"
-            elif pred <= 10: return "🔴 높음"
-            else: return "🔥 매우 높음"
-        risk = get_risk_level(pred)
-
-        st.markdown("#### 💡 온열질환자 예측")
-        c1, c2 = st.columns(2)
-        c1.metric("예측 환자 수", f"{pred:.2f}명")
-        c2.metric("위험 등급", risk)
-
-if 'stored' not in st.session_state:
-    st.session_state.stored = False
-
-with st.form(key="upload_form"):
-    uploaded_file = st.file_uploader("질병청 온열질환 엑셀 업로드 (시트명 = 지역명)", type=["xlsx"])
-    region = st.selectbox("지역 선택 (엑셀 시트명과 일치해야 함)", [
-        "서울특별시", "부산광역시", "대구광역시", "인천광역시", "광주광역시", "대전광역시",
-        "울산광역시", "세종특별자치시", "경기도", "강원도", "충청북도", "충청남도",
-        "전라북도", "전라남도", "경상북도", "경상남도", "제주특별자치도"
-    ])
-    date_selected = st.date_input("기록할 날짜 선택", value=datetime.date.today())
-    submit_button = st.form_submit_button(label="📅 업로드 및 학습 데이터 저장")
-
-if uploaded_file is not None and submit_button:
-    try:
-        df_raw = pd.read_excel(uploaded_file, sheet_name=region, header=None)
-        df_raw.columns = df_raw.iloc[2]
-        df = df_raw[3:].reset_index(drop=True)
-
-        df.columns = df.columns.map(lambda x: str(x).strip().replace("\n", "").replace(" ", ""))
-        st.write("🔍 컬럼 확인:", list(df.columns))
-
-        if not any("일자" in col for col in df.columns):
-            st.error("❌ '일자' 컬럼이 없습니다.")
-        else:
             일자_col = next((col for col in df.columns if "일자" in col), None)
             환자수_col = next((col for col in df.columns if "합계" in str(df[col].iloc[0])), None)
-
-            st.write("📌 인식된 일자 컬럼:", 일자_col)
-            st.write("📌 인식된 환자수 컬럼:", 환자수_col)
-
             if 환자수_col is None:
                 st.error("❌ '합계' 값이 있는 열을 찾을 수 없습니다.")
+                st.stop()
+
+            df[일자_col] = pd.to_datetime(df[일자_col], errors='coerce').dt.strftime("%Y-%m-%d")
+            ymd = date_selected.strftime("%Y-%m-%d")
+            df = df[df[일자_col] == ymd]
+            if df.empty:
+                st.warning("📭 선택한 날짜에 해당하는 환자 수 정보가 없습니다.")
+                st.stop()
+
+            환자수 = int(df.iloc[0][환자수_col])
+            weather = get_asos_weather(region, date_selected.strftime("%Y%m%d"))
+            tmx = weather.get("TMX", 0)
+            tmn = weather.get("TMN", 0)
+            reh = weather.get("REH", 0)
+            avg_temp = round((tmx + tmn) / 2, 1)
+            input_row = {
+                "일자": ymd,
+                "지역": region,
+                "최고체감온도(°C)": tmx + 1.5,
+                "최고기온(°C)": tmx,
+                "평균기온(°C)": avg_temp,
+                "최저기온(°C)": tmn,
+                "평균상대습도(%)": reh,
+                "환자수": 환자수
+            }
+
+            csv_path = GITHUB_FILENAME
+            if os.path.exists(csv_path):
+                existing = pd.read_csv(csv_path)
+                existing = existing[~((existing["일자"] == ymd) & (existing["지역"] == region))]
+                df_all = pd.concat([existing, pd.DataFrame([input_row])], ignore_index=True)
             else:
-                df[일자_col] = pd.to_datetime(df[일자_col], errors='coerce').dt.strftime("%Y-%m-%d")
-                ymd = date_selected.strftime("%Y-%m-%d")
-                df = df[df[일자_col] == ymd]
+                df_all = pd.DataFrame([input_row])
+            df_all.to_csv(csv_path, index=False, encoding="utf-8-sig")
 
-                if df.empty:
-                    st.warning("📭 선택한 날짜에 해당하는 환자 수 정보가 없습니다.")
-                else:
-                    환자수 = int(df.iloc[0][환자수_col])
-                    # tmx, tmn, avg_temp, weather는 외부에서 가져온 값이라 가정
-                    # 예시용 기본값 설정
-                    tmx = tmn = avg_temp = 0
-                    weather = {"REH": 0}
+            with open(csv_path, "rb") as f:
+                content = f.read()
+            b64_content = base64.b64encode(content).decode("utf-8")
+            api_url = f"https://api.github.com/repos/{GITHUB_USERNAME}/{GITHUB_REPO}/contents/{GITHUB_FILENAME}"
+            r = requests.get(api_url, headers={"Authorization": f"Bearer {GITHUB_TOKEN}"})
+            sha = r.json().get("sha") if r.status_code == 200 else None
+            payload = {
+                "message": f"Update {GITHUB_FILENAME} with new data for {ymd} {region}",
+                "content": b64_content,
+                "branch": GITHUB_BRANCH
+            }
+            if sha:
+                payload["sha"] = sha
+            headers = {
+                "Authorization": f"Bearer {GITHUB_TOKEN}",
+                "Accept": "application/vnd.github+json"
+            }
+            r = requests.put(api_url, headers=headers, json=payload)
+            if r.status_code in [200, 201]:
+                st.success("✅ GitHub 저장 완료")
+                st.info(f"🔗 [파일 바로 확인하기](https://github.com/{GITHUB_USERNAME}/{GITHUB_REPO}/blob/{GITHUB_BRANCH}/{GITHUB_FILENAME})")
+            else:
+                st.warning(f"⚠️ GitHub 저장 실패: {r.status_code} {r.text[:200]}")
 
-                    input_row = {
-                        "일자": ymd,
-                        "지역": region,
-                        "최고체감온도(°C)": tmx + 1.5 if tmx else 0,
-                        "최고기온(°C)": tmx or 0,
-                        "평균기온(°C)": avg_temp or 0,
-                        "최저기온(°C)": tmn or 0,
-                        "평균상대습도(%)": weather.get("REH", 0),
-                        "환자수": 환자수
-                    }
-
-                    st.success(f"✅ {ymd} {region} → 환자수 {환자수}명 기록 완료")
-                    st.dataframe(pd.DataFrame([input_row]))
-
-                    csv_path = "ML_asos_dataset.csv"
-                    if os.path.exists(csv_path):
-                        existing = pd.read_csv(csv_path)
-                        existing = existing[~((existing["일자"] == ymd) & (existing["지역"] == region))]
-                        df_all = pd.concat([existing, pd.DataFrame([input_row])], ignore_index=True)
-                    else:
-                        df_all = pd.DataFrame([input_row])
-
-                    df_all.to_csv(GITHUB_FILENAME, index=False, encoding="utf-8-sig")
-
-                    try:
-                        with open(GITHUB_FILENAME, "rb") as f:
-                            content = f.read()
-                        b64_content = base64.b64encode(content).decode("utf-8")
-                        api_url = f"https://api.github.com/repos/{GITHUB_USERNAME}/{GITHUB_REPO}/contents/{GITHUB_FILENAME}"
-
-                        r = requests.get(api_url, headers={"Authorization": f"Bearer {GITHUB_TOKEN}"})
-                        sha = r.json().get("sha") if r.status_code == 200 else None
-
-                        commit_msg = f"Update {GITHUB_FILENAME} with new data for {ymd} {region}"
-                        payload = {
-                            "message": commit_msg,
-                            "content": b64_content,
-                            "branch": GITHUB_BRANCH
-                        }
-                        if sha:
-                            payload["sha"] = sha
-
-                        headers = {
-                            "Authorization": f"Bearer {GITHUB_TOKEN}",
-                            "Accept": "application/vnd.github+json"
-                        }
-                        r = requests.put(api_url, headers=headers, json=payload)
-
-                        if r.status_code in [200, 201]:
-                            st.session_state.stored = True
-                            st.success("✅ GitHub 저장 완료")
-                            st.info(f"🔗 [파일 바로 확인하기](https://github.com/{GITHUB_USERNAME}/{GITHUB_REPO}/blob/{GITHUB_BRANCH}/{GITHUB_FILENAME})")
-                        else:
-                            st.warning(f"⚠️ GitHub 저장 실패: {r.status_code} {r.text[:200]}")
-
-                    except Exception as e:
-                        st.error(f"❌ GitHub 업로드 중 오류: {e}")
-
-    except Exception as e:
-        st.error(f"❌ 처리 중 오류 발생: {e}")
+        except Exception as e:
+            st.error(f"❌ 처리 중 오류 발생: {e}")
