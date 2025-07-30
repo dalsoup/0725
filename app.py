@@ -246,6 +246,8 @@ if st.button("조회하기"):
 if 'stored' not in st.session_state:
     st.session_state.stored = False
 
+uploaded_file = st.file_uploader("질병청 온열질환 엑셀 업로드 (시트명 = 지역명)", type=["xlsx"])
+
 if uploaded_file is not None and st.button("📅 업로드 및 학습 데이터 저장"):
     try:
         df = pd.read_excel(uploaded_file, sheet_name=region)
@@ -317,4 +319,3 @@ if uploaded_file is not None and st.button("📅 업로드 및 학습 데이터 
 
     except Exception as e:
         st.error(f"❌ 처리 중 오류 발생: {e}")
-
