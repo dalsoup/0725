@@ -198,27 +198,39 @@ with tab2:
     if uploaded_file and submit_button:
         try:
             df_raw = pd.read_excel(uploaded_file, sheet_name=region, header=None)
-            df_raw.columns = df_raw.iloc[2]
-            df = df_raw[3:].reset_index(drop=True)
-            df.columns = df.columns.map(lambda x: str(x).strip().replace("\n", "").replace(" ", ""))
-            if not any("일자" in col for col in df.columns):
-                st.error("❌ '일자' 컬럼이 없습니다.")
-                st.stop()
 
-            일자_col = next((col for col in df.columns if "일자" in col), None)
-            환자수_col = next((col for col in df.columns if "합계" in str(df[col].iloc[0])), None)
-            if 환자수_col is None:
-                st.error("❌ '합계' 값이 있는 열을 찾을 수 없습니다.")
-                st.stop()
+            # 자동 구조 인식: '합계'가 (0,1)에 있고, 날짜가 세로로 있는지 판별
+            if "합계" in df_raw.iloc[0].astype(str).tolist():
+                # 가로 방향 구조 (서울시 구조)
+                df_raw.columns = df_raw.iloc[1]
+                df = df_raw[2:].reset_index(drop=True)
+                df.rename(columns={df.columns[0]: "일자", df.columns[1]: "환자수"}, inplace=True)
+                df["일자"] = pd.to_datetime(df["일자"], errors="coerce").dt.strftime("%Y-%m-%d")
+            else:
+                # 세로 방향 구조 (구 구조)
+                df_raw.columns = df_raw.iloc[2]
+                df = df_raw[3:].reset_index(drop=True)
+                df.columns = df.columns.map(lambda x: str(x).strip().replace("\n", "").replace(" ", ""))
+                if not any("일자" in col for col in df.columns):
+                    st.error("❌ '일자' 컬럼이 없습니다.")
+                    st.stop()
+                일자_col = next(col for col in df.columns if "일자" in col)
+                환자수_col = next((col for col in df.columns if "합계" in str(df[col].iloc[0])), None)
+                if 환자수_col is None:
+                    st.error("❌ '합계' 값이 있는 열을 찾을 수 없습니다.")
+                    st.stop()
+                df[일자_col] = pd.to_datetime(df[일자_col], errors='coerce').dt.strftime("%Y-%m-%d")
+                df = df[[일자_col, 환자수_col]]
+                df.columns = ["일자", "환자수"]
 
-            df[일자_col] = pd.to_datetime(df[일자_col], errors='coerce').dt.strftime("%Y-%m-%d")
+            # 날짜 필터
             ymd = date_selected.strftime("%Y-%m-%d")
-            df = df[df[일자_col] == ymd]
+            df = df[df["일자"] == ymd]
             if df.empty:
                 st.warning("📭 선택한 날짜에 해당하는 환자 수 정보가 없습니다.")
                 st.stop()
 
-            환자수 = int(df.iloc[0][환자수_col])
+            환자수 = int(df.iloc[0]["환자수"])
             weather = get_asos_weather(region, date_selected.strftime("%Y%m%d"))
             tmx = weather.get("TMX", 0)
             tmn = weather.get("TMN", 0)
