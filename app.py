@@ -65,7 +65,7 @@ def get_weather(region_name, target_date):
 
     params = {
         "serviceKey": KMA_API_KEY,
-        "numOfRows": "1000",  # 🔥 충분한 예보 확보
+        "numOfRows": "1000",
         "pageNo": "1",
         "dataType": "JSON",
         "base_date": base_date,
@@ -83,7 +83,7 @@ def get_weather(region_name, target_date):
 
         if target_str not in df["fcstDate"].values:
             st.error(f"❌ 예보 데이터에 {target_str} 날짜가 포함되어 있지 않습니다.")
-            return {}
+            return {}, base_date, base_time
 
         df = df[df["fcstDate"] == target_str]
         df = df[df["category"].isin(["T3H", "TMX", "TMN", "REH"])]
@@ -94,11 +94,11 @@ def get_weather(region_name, target_date):
             if not vals.empty:
                 summary[cat] = vals.mean() if cat in ["REH", "T3H"] else vals.iloc[0]
 
-        return summary
+        return summary, base_date, base_time
 
     except Exception as e:
         st.error(f"⚠️ API 호출 실패: {e}")
-        return {}
+        return {}, base_date, base_time
 
 def calculate_avg_temp(tmx, tmn):
     if tmx is not None and tmn is not None:
@@ -122,10 +122,11 @@ today = datetime.date.today()
 date_selected = st.date_input("예측 날짜", value=today, min_value=today, max_value=today + datetime.timedelta(days=5))
 
 if st.button("예측하기"):
-    weather = get_weather(region, date_selected)
+    weather, base_date, base_time = get_weather(region, date_selected)
     if not weather:
-        st.error("기상 데이터를 불러올 수 없습니다.")
         st.stop()
+
+    st.caption(f"📡 사용된 예보 기준 시각 → base_date: `{base_date}`, base_time: `{base_time}`")
 
     tmx, tmn = weather.get("TMX"), weather.get("TMN")
     avg_temp = calculate_avg_temp(tmx, tmn)
@@ -145,19 +146,12 @@ if st.button("예측하기"):
         "평균상대습도(%)": weather.get("REH", 0)
     }])
 
-    missing = [col for col in feature_names if col not in input_df.columns]
-    if missing:
-        st.error(f"입력 누락 피처: {missing}")
-        st.stop()
+    # 디버깅용 출력
+    st.subheader("🧪 모델 입력값 확인")
+    st.dataframe(input_df)
 
-    X_input = input_df[feature_names].copy()
-    try:
-        X_input.columns = model.get_booster().feature_names
-    except:
-        st.error("모델의 feature 이름 설정 실패")
-        st.stop()
-
-    pred = model.predict(X_input)[0]
+    # 예측
+    pred = model.predict(input_df)[0]
     risk = get_risk_level(pred)
 
     st.markdown("#### 💡 온열질환자 예측")
