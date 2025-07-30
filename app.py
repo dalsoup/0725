@@ -249,14 +249,19 @@ with st.form(key="upload_form"):
 
 if uploaded_file is not None and submit_button:
     try:
-        df = pd.read_excel(uploaded_file, sheet_name=region, header=None)
-        df.columns = df.iloc[2]  # 3번째 줄이 실제 헤더로 보임
-        df = df[3:].copy()
+        df_raw = pd.read_excel(uploaded_file, sheet_name=region, header=None)
+
+        # '일자' 추출용 첫 열 분리
+        date_col_series = df_raw.iloc[3:, 0].copy()
+        date_col_series.name = "일자"
+
+        # 본문 데이터 분리 및 컬럼 설정
+        df = df_raw.iloc[3:, 1:].copy()
+        df.columns = df_raw.iloc[2, 1:].astype(str).str.replace("\\n", "", regex=False).str.replace("\\r", "", regex=False).str.replace(" ", "", regex=False).str.strip()
+
+        df.insert(0, "일자", date_col_series.values)
 
         df.columns = df.columns.astype(str).str.replace("\\n", "", regex=False).str.replace("\\r", "", regex=False).str.replace(" ", "", regex=False).str.strip()
-
-        col_map = {col: col.strip().replace("\n", "").replace("\r", "").replace(" ", "") for col in df.columns}
-        df.rename(columns=col_map, inplace=True)
 
         candidate_cols = list(df.columns)
         date_col = next((col for col in candidate_cols if "일자" in col), None)
