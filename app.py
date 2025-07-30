@@ -251,15 +251,23 @@ if uploaded_file is not None and submit_button:
     try:
         df = pd.read_excel(uploaded_file, sheet_name=region)
         df.columns = df.columns.str.strip()  # 컬럼명 공백 제거
-        if '일자' not in df.columns or '환자수' not in df.columns:
+        df.columns = df.columns.str.replace("\n", "")  # 줄바꿈 제거
+
+        col_map = {col: col.strip().replace("\n", "") for col in df.columns}
+        df.rename(columns=col_map, inplace=True)
+
+        if not any("일자" in col for col in df.columns) or not any("환자수" in col for col in df.columns):
             st.error("❌ 엑셀 파일에 '일자' 또는 '환자수' 컬럼이 없습니다.")
         else:
-            df['일자'] = pd.to_datetime(df['일자']).dt.strftime("%Y-%m-%d")
-            df = df[df['일자'] == ymd]
+            date_col = [col for col in df.columns if "일자" in col][0]
+            patient_col = [col for col in df.columns if "환자수" in col][0]
+            df[date_col] = pd.to_datetime(df[date_col]).dt.strftime("%Y-%m-%d")
+            df = df[df[date_col] == ymd]
+
             if df.empty:
                 st.warning("📭 선택한 날짜에 해당하는 환자 수 정보가 없습니다.")
             else:
-                환자수 = int(df.iloc[0]['환자수'])
+                환자수 = int(df.iloc[0][patient_col])
                 input_row = {
                     "일자": ymd,
                     "지역": region,
