@@ -11,8 +11,6 @@ model = joblib.load("trained_model.pkl")
 feature_names = joblib.load("feature_names.pkl")
 KMA_API_KEY = unquote(st.secrets["KMA"]["API_KEY"])
 
-# ---------------- 함수 ----------------
-
 def get_risk_level(pred):
     if pred == 0: return "🟢 매우 낮음"
     elif pred <= 2: return "🟡 낮음"
@@ -146,12 +144,15 @@ if st.button("예측하기"):
         "평균상대습도(%)": weather.get("REH", 0)
     }])
 
-    # 디버깅용 출력
+    # 디버깅 출력
     st.subheader("🧪 모델 입력값 확인")
     st.dataframe(input_df)
 
-    # 예측
-    pred = model.predict(input_df)[0]
+    # 🔥 XGBoost용: feature 이름 강제 적용
+    X_input = input_df[feature_names].copy()
+    X_input.columns = model.get_booster().feature_names
+
+    pred = model.predict(X_input)[0]
     risk = get_risk_level(pred)
 
     st.markdown("#### 💡 온열질환자 예측")
