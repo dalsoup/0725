@@ -4,4 +4,4 @@ matplotlib
 xgboost
 openpyxl
 streamlit
-sklearn
+scikit-learn
