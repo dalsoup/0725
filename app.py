@@ -149,9 +149,19 @@ tab1, tab2 = st.tabs(["📊 예측하기", "📥 학습데이터 기록"])
 # ====================================================================
 with tab1:
     st.header("📊 온열질환자 예측")
-    region = st.selectbox("지역 선택", list(region_to_stn_id.keys()), key="region_pred")
+    
+    # 📅 날짜 제한: 오늘 ~ 오늘 + 4일
     today = datetime.date.today()
-    date_selected = st.date_input("날짜 선택", value=today, min_value=datetime.date(2021, 7, 1), max_value=today + datetime.timedelta(days=5))
+    min_pred_date = today
+    max_pred_date = today + datetime.timedelta(days=4)
+
+    region = st.selectbox("지역 선택", list(region_to_stn_id.keys()), key="region_pred")
+    date_selected = st.date_input(
+        "날짜 선택",
+        value=today,
+        min_value=min_pred_date,
+        max_value=max_pred_date
+    )
 
     if st.button("🔍 예측하기"):
         if date_selected >= today:
@@ -190,10 +200,21 @@ with tab1:
 with tab2:
     st.header("📥 질병청 엑셀 업로드")
 
+    # 📅 날짜 제한: 2021년 5월 1일 ~ 어제
+    today = datetime.date.today()
+    min_record_date = datetime.date(2021, 5, 1)
+    max_record_date = today - datetime.timedelta(days=1)
+
     with st.form(key="upload_form"):
         uploaded_file = st.file_uploader("엑셀 파일 (시트명은 지역명)", type=["xlsx"])
         region = st.selectbox("지역 선택 (시트명과 동일)", list(region_to_stn_id.keys()), key="region_excel")
-        date_selected = st.date_input("기록할 날짜", value=today, key="record_date")
+        date_selected = st.date_input(
+            "기록할 날짜",
+            value=max_record_date,
+            min_value=min_record_date,
+            max_value=max_record_date,
+            key="record_date"
+        )
         submit_button = st.form_submit_button("📅 저장하기")
 
     if uploaded_file and submit_button:
