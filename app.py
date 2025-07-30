@@ -249,7 +249,10 @@ with st.form(key="upload_form"):
 
 if uploaded_file is not None and submit_button:
     try:
-        df = pd.read_excel(uploaded_file, sheet_name=region)
+        df = pd.read_excel(uploaded_file, sheet_name=region, header=None)
+        df.columns = df.iloc[2]  # 3번째 줄이 실제 헤더로 보임
+        df = df[3:].copy()
+
         df.columns = df.columns.astype(str).str.replace("\\n", "", regex=False).str.replace("\\r", "", regex=False).str.replace(" ", "", regex=False).str.strip()
 
         col_map = {col: col.strip().replace("\n", "").replace("\r", "").replace(" ", "") for col in df.columns}
@@ -257,7 +260,7 @@ if uploaded_file is not None and submit_button:
 
         candidate_cols = list(df.columns)
         date_col = next((col for col in candidate_cols if "일자" in col), None)
-        patient_col = next((col for col in candidate_cols if "환자수" in col), None)
+        patient_col = next((col for col in candidate_cols if "합계" in col), None)
 
         st.write("🔍 컬럼 확인:", candidate_cols)
         st.write("📌 인식된 일자 컬럼:", date_col)
@@ -266,7 +269,7 @@ if uploaded_file is not None and submit_button:
         if not date_col or not patient_col:
             st.error("❌ 엑셀 파일에 '일자' 또는 '환자수' 컬럼이 없습니다.")
         else:
-            df[date_col] = pd.to_datetime(df[date_col]).dt.strftime("%Y-%m-%d")
+            df[date_col] = pd.to_datetime(df[date_col], errors='coerce').dt.strftime("%Y-%m-%d")
             df = df[df[date_col] == ymd]
 
             if df.empty:
@@ -336,4 +339,3 @@ if uploaded_file is not None and submit_button:
 
     except Exception as e:
         st.error(f"❌ 처리 중 오류 발생: {e}")
-
