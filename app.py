@@ -228,4 +228,48 @@ if st.button("조회하기"):
         uploaded_file = st.file_uploader("질병청 온열질환 엑셀 업로드 (시트명 = 지역명)", type=["xlsx"])
         if uploaded_file:
             try:
+                sheet_df = pd.read_excel(uploaded_file, sheet_name=region, engine="openpyxl")
+                patient_col = [col for col in sheet_df.columns if "환자수" in col or "환자 수" in col]
+                date_col = [col for col in sheet_df.columns if "일자" in col or "날짜" in col or "기준일" in col]
+
+                if not patient_col or not date_col:
+                    st.error("❌ 시트에 '환자수'와 '일자' 관련 컬럼이 필요합니다.")
+                    st.stop()
+
+                df = sheet_df[[date_col[0], patient_col[0]]].copy()
+                df.columns = ["일자", "환자수"]
+                df["일자"] = pd.to_datetime(df["일자"]).dt.date
+                filtered = df[df["일자"] == date_selected]
+
+                if filtered.empty:
+                    st.warning("⚠️ 해당 날짜에 환자수가 없습니다.")
+                    st.stop()
+
+                환자수 = int(filtered.iloc[0]["환자수"])
+
+                input_row = {
+                    "일자": ymd,
+                    "지역": region,
+                    "최고체감온도(°C)": round(tmx + 1.5, 1),
+                    "최고기온(°C)": tmx,
+                    "평균기온(°C)": avg,
+                    "최저기온(°C)": tmn,
+                    "평균상대습도(%)": reh,
+                    "환자수": 환자수
+                }
+
+                st.success(f"✅ {ymd} {region} → 환자수 {환자수}명 기록 완료")
+                st.dataframe(pd.DataFrame([input_row]))
+
+                csv_path = "ML_asos_dataset.csv"
+                if os.path.exists(csv_path):
+                    existing = pd.read_csv(csv_path)
+                    existing = existing[~((existing["일자"] == ymd) & (existing["지역"] == region))]
+                    df = pd.concat([existing, pd.DataFrame([input_row])], ignore_index=True)
+                else:
+                    df = pd.DataFrame([input_row])
+
+                df.to_csv(csv_path, index=False, encoding="utf-8-sig")
+
+            except Exception as e:
                 st.error(f"❌ 처리 중 오류 발생: {e}")
