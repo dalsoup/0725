@@ -189,7 +189,6 @@ with tab1:
 # ====================================================================
 with tab2:
     st.header("📥 질병청 엑셀 업로드")
-    st.write("🔐 현재 토큰 앞자리:", GITHUB_TOKEN[:8])
 
     with st.form(key="upload_form"):
         uploaded_file = st.file_uploader("엑셀 파일 (시트명은 지역명)", type=["xlsx"])
@@ -199,11 +198,10 @@ with tab2:
 
     if uploaded_file and submit_button:
         try:
-            df_raw = pd.read_excel(uploaded_file, sheet_name=region, header=None)
+            df_raw = pd.read_excel(uploaded_file, sheet_name=region, header=None, engine="openpyxl")
             ymd = date_selected.strftime("%Y-%m-%d")
 
             if "합계" in df_raw.iloc[0].astype(str).tolist():
-                # ✅ 서울시형 구조 (가로)
                 df_raw.columns = df_raw.iloc[1]
                 df = df_raw[2:].reset_index(drop=True)
                 df.rename(columns={df.columns[0]: "일자"}, inplace=True)
@@ -212,12 +210,9 @@ with tab2:
                 if df_day.empty:
                     st.warning("📭 선택한 날짜에 해당하는 환자 수 정보가 없습니다.")
                     st.stop()
-
-                # 일자를 제외한 나머지 열 전체 환자수 합산
                 환자수 = pd.to_numeric(df_day.drop(columns=["일자"]).values.flatten(), errors="coerce").sum()
 
             else:
-                # ✅ 일반 시군구 구조 (세로)
                 df_raw.columns = df_raw.iloc[2]
                 df = df_raw[3:].reset_index(drop=True)
                 df.columns = df.columns.map(lambda x: str(x).strip().replace("\n", "").replace(" ", ""))
@@ -236,7 +231,6 @@ with tab2:
                     st.stop()
                 환자수 = int(df["환자수"].iloc[0])
 
-            # ✅ 기상 정보 결합
             weather = get_asos_weather(region, date_selected.strftime("%Y%m%d"))
             tmx = weather.get("TMX", 0)
             tmn = weather.get("TMN", 0)
@@ -254,20 +248,22 @@ with tab2:
                 "환자수": 환자수
             }
 
-            # ✅ CSV 파일 저장 및 GitHub 푸시
             csv_path = GITHUB_FILENAME
             if os.path.exists(csv_path):
-                existing = pd.read_csv(csv_path)
+                try:
+                    existing = pd.read_csv(csv_path, encoding="utf-8-sig")
+                except UnicodeDecodeError:
+                    existing = pd.read_csv(csv_path, encoding="cp949")
                 existing = existing[~((existing["일자"] == ymd) & (existing["지역"] == region))]
                 df_all = pd.concat([existing, pd.DataFrame([input_row])], ignore_index=True)
             else:
                 df_all = pd.DataFrame([input_row])
             df_all.to_csv(csv_path, index=False, encoding="utf-8-sig")
 
-            # GitHub 업로드
             with open(csv_path, "rb") as f:
                 content = f.read()
             b64_content = base64.b64encode(content).decode("utf-8")
+
             api_url = f"https://api.github.com/repos/{GITHUB_USERNAME}/{GITHUB_REPO}/contents/{GITHUB_FILENAME}"
             r = requests.get(api_url, headers={"Authorization": f"Bearer {GITHUB_TOKEN}"})
             sha = r.json().get("sha") if r.status_code == 200 else None
@@ -291,5 +287,3 @@ with tab2:
 
         except Exception as e:
             st.error(f"❌ 처리 중 오류 발생: {e}")
-
-
