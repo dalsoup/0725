@@ -6,9 +6,7 @@ import requests
 import math
 from urllib.parse import unquote
 
-# ----------- 설정 -----------
 st.set_page_config(layout="centered")
-
 model = joblib.load("trained_model.pkl")
 feature_names = joblib.load("feature_names.pkl")
 KMA_API_KEY = unquote(st.secrets["KMA"]["API_KEY"])
@@ -40,16 +38,48 @@ def convert_latlon_to_xy(lat, lon):
     y = ro - ra * math.cos(theta) + YO + 0.5
     return int(x), int(y)
 
+def get_latest_base_datetime(target_date):
+    now = datetime.datetime.now()
+    today = now.date()
+
+    if target_date == today:
+        hour = now.hour
+        if hour >= 23: bt = "2300"
+        elif hour >= 20: bt = "2000"
+        elif hour >= 17: bt = "1700"
+        elif hour >= 14: bt = "1400"
+        elif hour >= 11: bt = "1100"
+        elif hour >= 8: bt = "0800"
+        elif hour >= 5: bt = "0500"
+        elif hour >= 2: bt = "0200"
+        else: bt = "2300"; target_date -= datetime.timedelta(days=1)
+        return target_date.strftime("%Y%m%d"), bt
+
+    elif target_date > today:
+        hour = now.hour
+        if hour >= 23: bt = "2300"
+        elif hour >= 20: bt = "2000"
+        elif hour >= 17: bt = "1700"
+        elif hour >= 14: bt = "1400"
+        elif hour >= 11: bt = "1100"
+        elif hour >= 8: bt = "0800"
+        else: bt = "2300"; target_date -= datetime.timedelta(days=1)
+        return today.strftime("%Y%m%d"), bt
+
+    else:
+        return (target_date - datetime.timedelta(days=1)).strftime("%Y%m%d"), "2300"
+
 def get_weather(region_name, target_date):
     latlon = region_to_latlon.get(region_name, (37.5665, 126.9780))
     nx, ny = convert_latlon_to_xy(*latlon)
-    base_date = (target_date - datetime.timedelta(days=1)).strftime("%Y%m%d")
-    base_time = "2300"
+    base_date, base_time = get_latest_base_datetime(target_date)
+
     params = {
         "serviceKey": KMA_API_KEY,
         "numOfRows": "300", "pageNo": "1", "dataType": "JSON",
         "base_date": base_date, "base_time": base_time, "nx": nx, "ny": ny
     }
+
     try:
         r = requests.get("http://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getVilageFcst", params=params, timeout=10, verify=False)
         items = r.json().get("response", {}).get("body", {}).get("items", {}).get("item", [])
@@ -62,7 +92,8 @@ def get_weather(region_name, target_date):
             if not vals.empty:
                 summary[cat] = vals.mean() if cat in ["REH", "T3H"] else vals.iloc[0]
         return summary
-    except:
+    except Exception as e:
+        print("API 실패:", e)
         return {}
 
 def calculate_avg_temp(tmx, tmn):
@@ -91,7 +122,6 @@ if st.button("예측하기"):
         st.error("기상 데이터를 불러올 수 없습니다.")
         st.stop()
 
-    # ✅ 기상정보 먼저 표시
     tmx, tmn = weather.get("TMX"), weather.get("TMN")
     avg_temp = calculate_avg_temp(tmx, tmn)
 
@@ -102,7 +132,6 @@ if st.button("예측하기"):
     col3.metric("평균기온", f"{avg_temp:.1f}℃" if avg_temp is not None else "-")
     col4.metric("습도", f"{weather.get('REH', 0):.1f}%" if weather.get("REH") is not None else "-")
 
-    # ✅ 예측 입력 준비
     input_df = pd.DataFrame([{
         "최고체감온도(°C)": tmx + 1.5 if tmx else 0,
         "최고기온(°C)": tmx or 0,
@@ -111,29 +140,23 @@ if st.button("예측하기"):
         "평균상대습도(%)": weather.get("REH", 0)
     }])
 
-    # ✅ 컬럼 누락 검사
     missing = [col for col in feature_names if col not in input_df.columns]
     if missing:
         st.error(f"입력 누락 피처: {missing}")
         st.stop()
 
     X_input = input_df[feature_names].copy()
-
-    # ✅ XGBoost 호환 피처명 강제 일치
     try:
         X_input.columns = model.get_booster().feature_names
     except:
-        st.error("모델이 XGBoost 기반이 아니거나 feature 이름이 맞지 않습니다.")
+        st.error("모델의 feature 이름 설정 실패")
         st.stop()
 
-    # ✅ 예측 수행
     pred = model.predict(X_input)[0]
     risk = get_risk_level(pred)
 
-    # ✅ 결과 출력
     st.markdown("#### 💡 온열질환자 예측")
-    col1, col2 = st.columns(2)
-    col1.metric("예측 환자 수", f"{pred:.2f}명")
-    col2.metric("위험 등급", risk)
-
-    st.caption(f"전년도 대비 {'+' if pred - 6.8 >= 0 else ''}{pred - 6.8:.1f}명")
+    c1, c2 = st.columns(2)
+    c1.metric("예측 환자 수", f"{pred:.2f}명")
+    c2.metric("위험 등급", risk)
+    st.caption(f"전년도 평균(6.8명) 대비 {'+' if pred - 6.8 >= 0 else ''}{pred - 6.8:.1f}명")
