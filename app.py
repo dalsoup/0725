@@ -5,67 +5,13 @@ import joblib
 import requests
 import math
 from urllib.parse import unquote
-import matplotlib.pyplot as plt
 
-# ----------- STYLE (Dark Mode) -----------
+# ----------- PAGE STYLE -----------
 st.set_page_config(layout="centered")
-st.markdown("""
-<style>
-html, body, .stApp {
-    background-color: #0e1117 !important;
-    color: #ffffff !important;
-}
-div[data-testid="column"] > div {
-    background-color: #1e1e1e;
-    border-radius: 12px;
-    padding: 24px;
-    margin-bottom: 16px;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.3);
-}
-.stButton > button {
-    background-color: #2563eb;
-    color: white;
-    font-weight: 600;
-    padding: 0.6rem 1.2rem;
-    border-radius: 8px;
-    border: none;
-    height: 45px !important;
-    margin-top: 32px;
-}
-.stButton > button:hover {
-    background-color: #1d4ed8;
-}
-.stNumberInput input,
-.stSelectbox > div > div,
-.stSelectbox select,
-div.st-cj,
-.css-1cpxqw2.edgvbvh3, .stDateInput input {
-    background-color: #2c2f36 !important;
-    color: #ffffff !important;
-    border: 1px solid #444c56 !important;
-    border-radius: 6px;
-    padding: 0.4rem 0.6rem;
-    font-size: 14px !important;
-    max-width: 100%;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    line-height: 1.2rem;
-    height: 45px !important;
-}
-.stMetricLabel, .stMetricValue {
-    color: #ffffff !important;
-    font-weight: 600;
-}
-.css-13sd7wv.edgvbvh3 p {
-    font-size: 13px;
-}
-</style>
-""", unsafe_allow_html=True)
 
-# ----------- MODEL LOAD -----------
+# ----------- MODEL & FEATURES -----------
 model = joblib.load("trained_model.pkl")
-feature_names = joblib.load("feature_names.pkl")  # ✅ feature 순서
+feature_names = joblib.load("feature_names.pkl")
 
 # ----------- API KEY -----------
 KMA_API_KEY = unquote(st.secrets["KMA"]["API_KEY"])
@@ -86,44 +32,39 @@ def convert_latlon_to_xy(lat, lon):
     re = RE / GRID
     slat1, slat2 = SLAT1 * DEGRAD, SLAT2 * DEGRAD
     olon, olat = OLON * DEGRAD, OLAT * DEGRAD
-    sn = math.log(math.cos(slat1) / math.cos(slat2)) / math.log(math.tan(math.pi * 0.25 + slat2 * 0.5) / math.tan(math.pi * 0.25 + slat1 * 0.5))
-    sf = math.tan(math.pi * 0.25 + slat1 * 0.5)**sn * math.cos(slat1) / sn
-    ro = re * sf / (math.tan(math.pi * 0.25 + olat * 0.5)**sn)
-    ra = re * sf / (math.tan(math.pi * 0.25 + lat * DEGRAD * 0.5)**sn)
+    sn = math.log(math.cos(slat1)/math.cos(slat2)) / math.log(math.tan(math.pi/4+slat2/2)/math.tan(math.pi/4+slat1/2))
+    sf = math.tan(math.pi/4+slat1/2)**sn * math.cos(slat1)/sn
+    ro = re * sf / (math.tan(math.pi/4+olat/2)**sn)
+    ra = re * sf / (math.tan(math.pi/4+lat*DEGRAD/2)**sn)
     theta = lon * DEGRAD - olon
-    if theta > math.pi: theta -= 2.0 * math.pi
-    if theta < -math.pi: theta += 2.0 * math.pi
+    if theta > math.pi: theta -= 2*math.pi
+    if theta < -math.pi: theta += 2*math.pi
     theta *= sn
     x = ra * math.sin(theta) + XO + 0.5
     y = ro - ra * math.cos(theta) + YO + 0.5
     return int(x), int(y)
 
-def get_weather_from_api(region_name, target_date):
+def get_weather(region_name, target_date):
     latlon = region_to_latlon.get(region_name, (37.5665, 126.9780))
     nx, ny = convert_latlon_to_xy(*latlon)
-
     base_date = (target_date - datetime.timedelta(days=1)).strftime("%Y%m%d")
     base_time = "2300"
-
     params = {
         "serviceKey": KMA_API_KEY,
         "numOfRows": "300", "pageNo": "1", "dataType": "JSON",
-        "base_date": base_date, "base_time": base_time,
-        "nx": nx, "ny": ny
+        "base_date": base_date, "base_time": base_time, "nx": nx, "ny": ny
     }
-
     try:
         r = requests.get("http://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getVilageFcst", params=params, timeout=10, verify=False)
         items = r.json().get("response", {}).get("body", {}).get("items", {}).get("item", [])
         df = pd.DataFrame(items)
-        df = df[df["category"].isin(["T3H", "TMX", "TMN", "REH", "WSD"])]
-        target_str = target_date.strftime("%Y%m%d")
-        df = df[df["fcstDate"] == target_str]
+        df = df[df["category"].isin(["T3H", "TMX", "TMN", "REH"])]
+        df = df[df["fcstDate"] == target_date.strftime("%Y%m%d")]
         summary = {}
-        for cat in ["TMX", "TMN", "REH", "T3H", "WSD"]:
-            values = df[df["category"] == cat]["fcstValue"].astype(float)
-            if not values.empty:
-                summary[cat] = values.mean() if cat in ["REH", "T3H"] else values.iloc[0]
+        for cat in ["TMX", "TMN", "REH", "T3H"]:
+            vals = df[df["category"] == cat]["fcstValue"].astype(float)
+            if not vals.empty:
+                summary[cat] = vals.mean() if cat == "REH" or cat == "T3H" else vals.iloc[0]
         return summary
     except:
         return {}
@@ -142,67 +83,40 @@ region_to_latlon = {
     "경상남도": (35.4606, 128.2132), "제주특별자치도": (33.4996, 126.5312)
 }
 
-# ----------- HEADER UI -----------
-st.markdown("### 👋 Hello, User")
-st.caption("폭염에 따른 온열질환 발생 예측 플랫폼")
-
-c1, c2, c3 = st.columns([2, 2, 1])
-with c1:
-    region = st.selectbox("지역 선택", list(region_to_latlon.keys()), key="region_select")
-with c2:
-    today = datetime.date.today()
-    date_selected = st.date_input("날짜 선택", value=today, min_value=today, max_value=today + datetime.timedelta(days=5))
-with c3:
-    predict_clicked = st.button("예측하기")
-
-if predict_clicked and region and date_selected:
-    weather = get_weather_from_api(region, date_selected)
+# ----------- UI -----------
+st.title("🔥 온열질환 예측 대시보드")
+region = st.selectbox("지역 선택", list(region_to_latlon.keys()))
+today = datetime.date.today()
+date_selected = st.date_input("예측 날짜", value=today, min_value=today, max_value=today + datetime.timedelta(days=5))
+if st.button("예측하기"):
+    weather = get_weather(region, date_selected)
     if not weather:
-        st.error("기상 데이터를 불러오지 못했습니다.")
+        st.error("기상청 데이터를 불러오지 못했습니다.")
         st.stop()
 
-    avg_temp = calculate_avg_temp(weather.get("TMX"), weather.get("TMN"))
-    st.markdown("#### ☁️ 오늘의 기상정보")
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("최고기온", f"{weather.get('TMX', 0):.1f}℃")
-    col2.metric("최저기온", f"{weather.get('TMN', 0):.1f}℃")
-    col3.metric("평균기온", f"{avg_temp:.1f}℃" if avg_temp is not None else "-℃")
-    col4.metric("습도", f"{weather.get('REH', 0):.1f}%")
+    tmx, tmn = weather.get("TMX"), weather.get("TMN")
+    avg_temp = calculate_avg_temp(tmx, tmn)
 
-    # ✅ 예측 입력값 생성 (정확한 컬럼명으로)
-    input_df = pd.DataFrame([{ 
-        "광역자치단체": region,
-        "최고체감온도(°C)": weather.get("TMX", 0) + 1.5,
-        "최고기온(°C)": weather.get("TMX", 0),
+    input_df = pd.DataFrame([{
+        "최고체감온도(°C)": tmx + 1.5 if tmx is not None else 0,
+        "최고기온(°C)": tmx or 0,
         "평균기온(°C)": avg_temp or 0,
-        "최저기온(°C)": weather.get("TMN", 0),
-        "습도(%)": weather.get("REH", 0)  # ✅ 이름 맞춤!
+        "최저기온(°C)": tmn or 0,
+        "평균상대습도(%)": weather.get("REH", 0)
     }])
 
-    try:
-        X_input = input_df[feature_names]
-        pred = model.predict(X_input)[0]
-    except Exception as e:
-        st.error(f"예측 중 오류 발생: {str(e)}")
+    # 🛡 feature 이름 누락 확인
+    missing = [col for col in feature_names if col not in input_df.columns]
+    if missing:
+        st.error(f"입력 피처 누락: {missing}")
         st.stop()
 
+    X_input = input_df[feature_names]
+    pred = model.predict(X_input)[0]
     risk = get_risk_level(pred)
 
-    st.markdown("#### 💡 온열질환자 예측")
-    c1, c2 = st.columns(2)
-    c1.metric("예측 온열질환자 수", f"{pred:.2f}명")
-    c2.metric("위험 등급", risk)
-
-    diff = pred - 6.8
-    st.caption(f"전년도 대비 {'+' if diff >= 0 else ''}{diff:.1f}명")
-
-    if "🔥" in risk:
-        st.warning("🚨 매우 높음: 외출 자제 및 냉방기기 사용 권고")
-    elif "🔴" in risk:
-        st.info("🔴 높음: 노약자 야외활동 주의")
-    elif "🟠" in risk:
-        st.info("🟠 보통: 충분한 수분 섭취 필요")
-    elif "🟡" in risk:
-        st.success("🟡 낮음: 무리한 야외활동 자제")
-    else:
-        st.success("🟢 매우 낮음: 위험 없음")
+    # ----------- 결과 출력 -----------
+    st.subheader("예측 결과")
+    st.metric("예측 온열질환자 수", f"{pred:.2f}명")
+    st.metric("위험 등급", risk)
+    st.caption(f"전년도 평균(6.8명) 대비 {'+' if pred - 6.8 >= 0 else ''}{pred - 6.8:.1f}명")
