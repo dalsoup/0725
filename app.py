@@ -199,16 +199,15 @@ with tab2:
         try:
             df_raw = pd.read_excel(uploaded_file, sheet_name=region, header=None)
 
-            # ✅ 자동 구조 인식
             if "합계" in df_raw.iloc[0].astype(str).tolist():
-                # 👉 서울시 구조 (가로형, 합계 열이 있음)
+                # 👉 서울시 구조 (가로형)
                 df_raw.columns = df_raw.iloc[1]
                 df = df_raw[2:].reset_index(drop=True)
                 df.rename(columns={df.columns[0]: "일자", df.columns[1]: "환자수"}, inplace=True)
                 df["일자"] = pd.to_datetime(df["일자"], errors="coerce").dt.strftime("%Y-%m-%d")
                 df["환자수"] = pd.to_numeric(df["환자수"], errors="coerce")
             else:
-                # 👉 구 구조 (세로형, 일자/합계 컬럼 존재)
+                # 👉 구 구조 (세로형)
                 df_raw.columns = df_raw.iloc[2]
                 df = df_raw[3:].reset_index(drop=True)
                 df.columns = df.columns.map(lambda x: str(x).strip().replace("\n", "").replace(" ", ""))
@@ -225,16 +224,21 @@ with tab2:
                 df.columns = ["일자", "환자수"]
                 df["환자수"] = pd.to_numeric(df["환자수"], errors="coerce")
 
-            # ✅ 날짜 필터
+            # ✅ 날짜 필터링
             ymd = date_selected.strftime("%Y-%m-%d")
             df = df[df["일자"] == ymd]
             if df.empty:
                 st.warning("📭 선택한 날짜에 해당하는 환자 수 정보가 없습니다.")
                 st.stop()
 
-            환자수 = int(df["환자수"].iloc[0])
+            # ✅ 환자수 추출 (단일값 or Series 대응)
+            row_value = df["환자수"].iloc[0]
+            if isinstance(row_value, pd.Series):
+                환자수 = int(pd.to_numeric(row_value, errors="coerce").sum())
+            else:
+                환자수 = int(pd.to_numeric(row_value, errors="coerce"))
 
-            # ✅ 기상 데이터 결합
+            # ✅ 기상 정보 결합
             weather = get_asos_weather(region, date_selected.strftime("%Y%m%d"))
             tmx = weather.get("TMX", 0)
             tmn = weather.get("TMN", 0)
@@ -252,7 +256,7 @@ with tab2:
                 "환자수": 환자수
             }
 
-            # ✅ CSV 저장 및 GitHub 업로드
+            # ✅ GitHub 저장
             csv_path = GITHUB_FILENAME
             if os.path.exists(csv_path):
                 existing = pd.read_csv(csv_path)
@@ -262,7 +266,6 @@ with tab2:
                 df_all = pd.DataFrame([input_row])
             df_all.to_csv(csv_path, index=False, encoding="utf-8-sig")
 
-            # GitHub 저장
             with open(csv_path, "rb") as f:
                 content = f.read()
             b64_content = base64.b64encode(content).decode("utf-8")
