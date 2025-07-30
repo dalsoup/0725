@@ -11,7 +11,26 @@ model = joblib.load("trained_model.pkl")
 feature_names = joblib.load("feature_names.pkl")
 KMA_API_KEY = unquote(st.secrets["KMA"]["API_KEY"])
 
-# ==================== 기능 함수 ====================
+# ✅ 수정된 발표 시각 결정 함수
+def get_best_available_base_datetime(target_date):
+    now = datetime.datetime.now()
+    today = now.date()
+
+    # 기상청 발표 시간 (거꾸로 순회)
+    available_times = ["2300", "2000", "1700", "1400", "1100", "0800", "0500", "0200"]
+    current_hour = now.hour
+    current_time_str = f"{current_hour:02d}00"
+    
+    for t in available_times:
+        if int(t) <= int(current_time_str):
+            base_time = t
+            break
+    else:
+        base_time = "2300"
+        target_date = target_date - datetime.timedelta(days=1)
+
+    base_date = today.strftime("%Y%m%d") if target_date > today else target_date.strftime("%Y%m%d")
+    return base_date, base_time
 
 def get_risk_level(pred):
     if pred == 0: return "🟢 매우 낮음"
@@ -40,46 +59,14 @@ def convert_latlon_to_xy(lat, lon):
     y = ro - ra * math.cos(theta) + YO + 0.5
     return int(x), int(y)
 
-def get_latest_base_datetime(target_date):
-    now = datetime.datetime.now()
-    today = now.date()
-
-    if target_date == today:
-        hour = now.hour
-        if hour >= 23: bt = "2300"
-        elif hour >= 20: bt = "2000"
-        elif hour >= 17: bt = "1700"
-        elif hour >= 14: bt = "1400"
-        elif hour >= 11: bt = "1100"
-        elif hour >= 8: bt = "0800"
-        elif hour >= 5: bt = "0500"
-        elif hour >= 2: bt = "0200"
-        else: bt = "2300"; target_date -= datetime.timedelta(days=1)
-        return target_date.strftime("%Y%m%d"), bt
-
-    elif target_date > today:
-        hour = now.hour
-        if hour >= 23: bt = "2300"
-        elif hour >= 20: bt = "2000"
-        elif hour >= 17: bt = "1700"
-        elif hour >= 14: bt = "1400"
-        elif hour >= 11: bt = "1100"
-        elif hour >= 8: bt = "0800"
-        else: bt = "2300"; target_date -= datetime.timedelta(days=1)
-        return today.strftime("%Y%m%d"), bt
-
-    else:
-        return (target_date - datetime.timedelta(days=1)).strftime("%Y%m%d"), "2300"
-
 def get_weather(region_name, target_date):
     latlon = region_to_latlon.get(region_name, (37.5665, 126.9780))
     nx, ny = convert_latlon_to_xy(*latlon)
-    base_date, base_time = get_latest_base_datetime(target_date)
+    base_date, base_time = get_best_available_base_datetime(target_date)
 
-    # ✅ 디버그 출력 시작
-    st.write("📡 요청 base_date:", base_date)
-    st.write("🕓 요청 base_time:", base_time)
-    st.write("🎯 예측 대상 날짜:", target_date.strftime("%Y%m%d"))
+    st.write("📡 base_date:", base_date)
+    st.write("🕓 base_time:", base_time)
+    st.write("🎯 target_date:", target_date.strftime("%Y%m%d"))
 
     params = {
         "serviceKey": KMA_API_KEY,
@@ -93,15 +80,10 @@ def get_weather(region_name, target_date):
         items = r.json().get("response", {}).get("body", {}).get("items", {}).get("item", [])
         df = pd.DataFrame(items)
 
-        # ✅ 추가 로그 출력
-        st.write("📦 받은 행 개수:", len(df))
-        if not df.empty:
-            st.write("📅 받은 fcstDate 목록:", df["fcstDate"].unique())
-            st.write("🧩 받은 category 목록:", df["category"].unique())
-
-        # 🔥 핵심: fcstDate 비교 위해 문자열 변환
         df["fcstDate"] = df["fcstDate"].astype(str)
         target_str = target_date.strftime("%Y%m%d")
+
+        st.write("📦 fcstDate 리스트:", df["fcstDate"].unique())
 
         if target_str not in df["fcstDate"].values:
             st.error(f"❌ 예보 데이터에 {target_str} 날짜가 포함되어 있지 않습니다.")
@@ -119,7 +101,7 @@ def get_weather(region_name, target_date):
         return summary
 
     except Exception as e:
-        print("⚠️ API 호출 실패:", e)
+        st.error(f"⚠️ API 호출 실패: {e}")
         return {}
 
 def calculate_avg_temp(tmx, tmn):
@@ -136,7 +118,7 @@ region_to_latlon = {
     "경상남도": (35.4606, 128.2132), "제주특별자치도": (33.4996, 126.5312)
 }
 
-# ==================== Streamlit UI ====================
+# ==================== UI ====================
 
 st.title("🔥 온열질환 예측 대시보드")
 region = st.selectbox("지역 선택", list(region_to_latlon.keys()))
