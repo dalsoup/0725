@@ -9,14 +9,10 @@ from urllib.parse import unquote
 # ----------- 설정 -----------
 st.set_page_config(layout="centered")
 
-# ----------- 모델 로드 -----------
 model = joblib.load("trained_model.pkl")
 feature_names = joblib.load("feature_names.pkl")
-
-# ----------- 기상청 API 키 -----------
 KMA_API_KEY = unquote(st.secrets["KMA"]["API_KEY"])
 
-# ----------- 함수 정의 -----------
 def get_risk_level(pred):
     if pred == 0: return "🟢 매우 낮음"
     elif pred <= 2: return "🟡 낮음"
@@ -52,8 +48,7 @@ def get_weather(region_name, target_date):
     params = {
         "serviceKey": KMA_API_KEY,
         "numOfRows": "300", "pageNo": "1", "dataType": "JSON",
-        "base_date": base_date, "base_time": base_time,
-        "nx": nx, "ny": ny
+        "base_date": base_date, "base_time": base_time, "nx": nx, "ny": ny
     }
     try:
         r = requests.get("http://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getVilageFcst", params=params, timeout=10, verify=False)
@@ -96,18 +91,27 @@ if st.button("예측하기"):
         st.error("기상 데이터를 불러올 수 없습니다.")
         st.stop()
 
+    # ✅ 기상정보 먼저 표시
     tmx, tmn = weather.get("TMX"), weather.get("TMN")
     avg_temp = calculate_avg_temp(tmx, tmn)
 
+    st.markdown("#### ☁️ 오늘의 기상정보")
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("최고기온", f"{tmx:.1f}℃" if tmx else "-")
+    col2.metric("최저기온", f"{tmn:.1f}℃" if tmn else "-")
+    col3.metric("평균기온", f"{avg_temp:.1f}℃" if avg_temp is not None else "-")
+    col4.metric("습도", f"{weather.get('REH', 0):.1f}%" if weather.get("REH") is not None else "-")
+
+    # ✅ 예측 입력 준비
     input_df = pd.DataFrame([{
-        "최고체감온도(°C)": tmx + 1.5 if tmx is not None else 0,
+        "최고체감온도(°C)": tmx + 1.5 if tmx else 0,
         "최고기온(°C)": tmx or 0,
         "평균기온(°C)": avg_temp or 0,
         "최저기온(°C)": tmn or 0,
         "평균상대습도(%)": weather.get("REH", 0)
     }])
 
-    # 피처 확인
+    # ✅ 컬럼 누락 검사
     missing = [col for col in feature_names if col not in input_df.columns]
     if missing:
         st.error(f"입력 누락 피처: {missing}")
@@ -115,18 +119,21 @@ if st.button("예측하기"):
 
     X_input = input_df[feature_names].copy()
 
-    # 💥 XGBoost 호환용 이름 정렬
+    # ✅ XGBoost 호환 피처명 강제 일치
     try:
         X_input.columns = model.get_booster().feature_names
     except:
-        st.error("모델이 XGBoost 기반이 아니거나 feature_names가 일치하지 않습니다.")
+        st.error("모델이 XGBoost 기반이 아니거나 feature 이름이 맞지 않습니다.")
         st.stop()
 
+    # ✅ 예측 수행
     pred = model.predict(X_input)[0]
     risk = get_risk_level(pred)
 
-    # ----------- 출력 -----------
-    st.subheader("📊 예측 결과")
-    st.metric("예측 온열질환자 수", f"{pred:.2f}명")
-    st.metric("위험 등급", risk)
-    st.caption(f"전년도 평균(6.8명) 대비 {'+' if pred - 6.8 >= 0 else ''}{pred - 6.8:.1f}명")
+    # ✅ 결과 출력
+    st.markdown("#### 💡 온열질환자 예측")
+    col1, col2 = st.columns(2)
+    col1.metric("예측 환자 수", f"{pred:.2f}명")
+    col2.metric("위험 등급", risk)
+
+    st.caption(f"전년도 대비 {'+' if pred - 6.8 >= 0 else ''}{pred - 6.8:.1f}명")
