@@ -189,6 +189,23 @@ with tab1:
 # ====================================================================
 with tab2:
     st.header("📥 질병청 엑셀 업로드")
+
+import requests
+
+st.subheader("🧪 GitHub 인증 테스트")
+headers = {
+    "Authorization": f"Bearer {GITHUB_TOKEN}",
+    "Accept": "application/vnd.github+json"
+}
+user_resp = requests.get("https://api.github.com/user", headers=headers)
+
+if user_resp.status_code == 200:
+    st.success("✅ 토큰 인증 성공")
+    st.write("사용자 정보:", user_resp.json()["login"])
+else:
+    st.error(f"❌ 인증 실패: {user_resp.status_code}")
+    st.code(user_resp.text)
+
     with st.form(key="upload_form"):
         uploaded_file = st.file_uploader("엑셀 파일 (시트명은 지역명)", type=["xlsx"])
         region = st.selectbox("지역 선택 (시트명과 동일)", list(region_to_stn_id.keys()), key="region_excel")
