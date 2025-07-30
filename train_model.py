@@ -1,4 +1,3 @@
-
 import pandas as pd
 import joblib
 from sklearn.ensemble import RandomForestRegressor
@@ -9,6 +8,11 @@ df = pd.read_excel("ML_7_8월_2021_2025_dataset.xlsx")
 
 # 결측값 제거
 df = df.dropna()
+
+# ✅ 컬럼명 통일 (예측 코드와 일치시킴)
+df = df.rename(columns={
+    "습도(%)": "평균상대습도(%)"
+})
 
 # 입력 변수와 타겟 정의
 features = ['최고체감온도(°C)', '최고기온(°C)', '평균기온(°C)', '최저기온(°C)', '평균상대습도(%)']
