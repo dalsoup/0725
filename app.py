@@ -136,8 +136,7 @@ def predict_from_weather(tmx, tmn, reh):
         "최저기온(°C)": tmn,
         "평균상대습도(%)": reh
     }])
-    X = input_df[feature_names].copy()
-    X.columns = model.get_booster().feature_names
+    X = input_df[feature_names] 
     pred = model.predict(X)[0]
     return pred, avg_temp, input_df
 
