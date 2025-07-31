@@ -1,9 +1,9 @@
-name: Train Model
+name: Train Model with XGBoost
 
 on:
-  workflow_dispatch:  # ✅ 수동 실행 버튼 활성화
+  workflow_dispatch:  # 수동 실행 가능
   schedule:
-    - cron: '0 8 * * *'  # ✅ 한국시간 오후 5시 (UTC 기준 08:00)
+    - cron: '0 8 * * *'  # 매일 한국시간 오후 5시 (UTC 기준 08:00)
 
 jobs:
   train-model:
@@ -23,12 +23,12 @@ jobs:
           python -m pip install --upgrade pip
           pip install pandas joblib openpyxl requests scikit-learn xgboost
 
-      - name: 🤖 Run training script
+      - name: 🤖 Run XGBoost training script
         run: python train_model.py
 
       - name: ⬆️ Commit and push new model
         uses: EndBug/add-and-commit@v9
         with:
-          add: "./trained_model.pkl ./feature_names.pkl"
-          message: "🤖 Auto update trained_model.pkl from GitHub Actions"
+          add: "trained_model.pkl feature_names.pkl"
+          message: "🤖 Auto update XGBoost trained_model.pkl from GitHub Actions"
           push: true
