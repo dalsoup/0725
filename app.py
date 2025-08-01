@@ -33,28 +33,44 @@ tab1, tab2, tab3 = st.tabs(["📊 폭염트리거 예측하기", "📥 AI 학습
 with tab1:
     st.header("📊 폭염트리거 예측하기")
 
+    # ✅ 날짜 선택 범위 설정: 2021-05-01 ~ 오늘+30일
     today = datetime.date.today()
-    min_pred_date = today
-    max_pred_date = today + datetime.timedelta(days=4)
+    min_pred_date = datetime.date(2021, 5, 1)
+    max_pred_date = today + datetime.timedelta(days=30)
 
+    # ✅ 지역 및 날짜 선택
     region = st.selectbox("지역 선택", list(region_to_stn_id.keys()), key="region_tab1")
-    date_selected = st.date_input("날짜 선택", value=today, min_value=min_pred_date, max_value=max_pred_date, key="date_tab1")
+    date_selected = st.date_input(
+        "날짜 선택",
+        value=today,
+        min_value=min_pred_date,
+        max_value=max_pred_date,
+        key="date_tab1"
+    )
 
     if st.button("🔍 예측하기", key="predict_tab1"):
+        # ✅ 기상 데이터 불러오기
         if date_selected >= today:
             weather, base_date, base_time = get_weather(region, date_selected, KMA_API_KEY)
         else:
             ymd = date_selected.strftime("%Y%m%d")
             weather = get_asos_weather(region, ymd, ASOS_API_KEY)
 
+        # ✅ 예측 가능한 기상 정보가 없을 경우 중단
         if not weather:
             st.error("❌ 기상 정보 없음")
             st.stop()
 
-        tmx, tmn, reh = weather.get("TMX", 0), weather.get("TMN", 0), weather.get("REH", 0)
+        # ✅ 기온/습도 추출
+        tmx = weather.get("TMX", 0)
+        tmn = weather.get("TMN", 0)
+        reh = weather.get("REH", 0)
+
+        # ✅ 예측 수행
         pred, avg_temp, input_df = predict_from_weather(tmx, tmn, reh)
         risk = get_risk_level(pred)
 
+        # ✅ 기상 정보 출력
         st.markdown("#### ☁️ 기상정보")
         col1, col2, col3, col4 = st.columns(4)
         col1.metric("최고기온", f"{tmx:.1f}℃")
@@ -65,32 +81,13 @@ with tab1:
         with st.expander("🧪 입력값 확인"):
             st.dataframe(input_df)
 
+        # ✅ 예측 결과 출력
         st.markdown("#### 💡 예측 결과")
         c1, c2 = st.columns(2)
         c1.metric("예측 환자 수", f"{pred:.2f}명")
         c2.metric("위험 등급", risk)
 
-        # ✅ 예측 결과 CSV로 저장
-        SAVE_FILE = "ML_asos_total_prediction.csv"
-
-        try:
-            df_total = pd.read_csv(SAVE_FILE, encoding="utf-8-sig")
-        except FileNotFoundError:
-            df_total = pd.DataFrame(columns=["일자", "서울시예측환자수"])
-
-        today_row = pd.DataFrame([{
-            "일자": date_selected.strftime("%Y-%m-%d"),
-            "서울시예측환자수": round(pred, 2)
-        }])
-
-        # 기존 동일 날짜 데이터 제거 후 갱신
-        df_total = df_total[df_total["일자"] != today_row.iloc[0]["일자"]]
-        df_total = pd.concat([df_total, today_row], ignore_index=True)
-        df_total.to_csv(SAVE_FILE, index=False, encoding="utf-8-sig")
-
-        st.success(f"✅ 예측값이 '{SAVE_FILE}'에 저장되었습니다.")
-
-
+        # ✅ 전년도 환자수 비교
         def get_last_year_patient_count(current_date, region, static_file="ML_7_8월_2021_2025_dataset.xlsx"):
             try:
                 last_year_date = current_date - datetime.timedelta(days=365)
@@ -113,6 +110,25 @@ with tab1:
             st.markdown(f"📈 **전년 대비 증감**: {'+' if delta >= 0 else ''}{delta:.1f}명")
         else:
             st.markdown("📭 전년도 동일 날짜의 환자 수 데이터를 찾을 수 없습니다.")
+
+        # ✅ 예측값 CSV로 저장 (tab3에서 활용)
+        SAVE_FILE = "ML_asos_total_prediction.csv"
+        try:
+            df_total = pd.read_csv(SAVE_FILE, encoding="utf-8-sig")
+        except FileNotFoundError:
+            df_total = pd.DataFrame(columns=["일자", "서울시예측환자수"])
+
+        new_row = pd.DataFrame([{
+            "일자": date_selected.strftime("%Y-%m-%d"),
+            "서울시예측환자수": round(pred, 2)
+        }])
+
+        df_total = df_total[df_total["일자"] != new_row.iloc[0]["일자"]]
+        df_total = pd.concat([df_total, new_row], ignore_index=True)
+        df_total.to_csv(SAVE_FILE, index=False, encoding="utf-8-sig")
+
+        st.success(f"✅ 예측값이 '{SAVE_FILE}'에 저장되었습니다.")
+
 
 # ====================================================================
 # 📥 AI 학습 데이터 추가
