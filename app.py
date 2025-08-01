@@ -227,39 +227,43 @@ with tab2:
 
 with tab3:
     st.header("📍 자치구별 피해점수 및 보상 산정")
-
-    # ✅ 1. 날짜 선택
-    today = datetime.date.today()
-    min_date = datetime.date(2021, 5, 1)
-    max_date = today - datetime.timedelta(days=1)
-    selected_date = st.date_input("📅 분석 날짜 선택", value=max_date, min_value=min_date, max_value=max_date, key="date_tab3")
+    selected_date = st.date_input("📅 분석 날짜 선택", ...)
     ymd = selected_date.strftime("%Y-%m-%d")
 
-    # ✅ 2. 데이터 로딩
-    try:
-        ml_data = pd.read_csv("ML_asos_dataset.csv", encoding="utf-8-sig")
-        static_data = pd.read_csv("seoul_static_data.csv")
+    ml_data = pd.read_csv("ML_asos_dataset.csv", encoding="utf-8-sig")
+    static_data = pd.read_csv("seoul_static_data.csv", encoding="utf-8-sig")
 
-        merged = pd.merge(ml_data, static_data, on="자치구", how="left")
-        merged = merged[merged["일자"] == ymd].copy()
+    merged = pd.merge(ml_data, static_data, on="자치구", how="left")
+    merged = merged[merged["일자"] == ymd].copy()
+    selected_gu = st.selectbox("🏘️ 자치구 선택", sorted(merged["자치구"].unique()))
 
-        # ✅ 자치구 선택
-        gu_options = sorted(merged["자치구"].unique())
-        selected_gu = st.selectbox("🏘️ 자치구 선택", gu_options, key="gu_tab3")
-        merged = merged[merged["자치구"] == selected_gu].copy()
+    merged = merged[merged["자치구"] == selected_gu].copy()
 
-        # ✅ 3. 피해점수 계산
-        alpha, beta, theta = 0.5, 0.3, 0.2
-        merged["S"] = alpha * merged["고령자비율"] + beta * merged["야외근로자비율"] + theta * merged["열쾌적취약인구비율"]
+    # ✅ S
+    merged["S"] = 0.5 * merged["고령자비율"].fillna(0) + \
+                  0.3 * merged["야외근로자비율"].fillna(0) + \
+                  0.2 * merged["열쾌적취약인구비율"].fillna(0)
 
-        gamma, delta, epsilon = 0.5, 0.3, 0.2
-        for col in ["열섬지수", "녹지율", "냉방보급률"]:
-            col_std = (merged[col] - merged[col].min()) / (merged[col].max() - merged[col].min())
-            merged[f"{col}_std"] = col_std
+    # ✅ E
+    for col in ["열섬지수", "녹지율", "냉방보급률"]:
+        std_col = (merged[col] - merged[col].min()) / (merged[col].max() - merged[col].min())
+        merged[f"{col}_std"] = std_col.fillna(0)
 
-        E = gamma * merged["열섬지수_std"] + delta * (1 - merged["녹지율_std"]) + epsilon * (1 - merged["냉방보급률_std"])
-        merged["E"] = E
-        merged["피해점수"] = 10 * (merged["S"] + merged["E"])
+    merged["E"] = 0.5 * merged["열섬지수_std"] + \
+                  0.3 * (1 - merged["녹지율_std"]) + \
+                  0.2 * (1 - merged["냉방보급률_std"])
+
+    # ✅ 환자수 비율
+    merged["예측환자수비율"] = merged["예측환자수"] / ml_data["예측환자수"].max()
+    merged["실제환자수비율"] = merged["환자수"] / ml_data["환자수"].max()
+
+    # ✅ 피해점수
+    merged["피해점수"] = 10 * (
+        0.4 * merged["S"] +
+        0.3 * merged["E"] +
+        0.2 * merged["예측환자수비율"] +
+        0.1 * merged["실제환자수비율"]
+    )
 
         # ✅ 4. 피해점수 기반 위험등급
         def score_to_grade(s):
