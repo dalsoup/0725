@@ -269,7 +269,6 @@ with tab3:
         selected_date = st.date_input("📅 분석 날짜 선택", datetime.date.today())
         ymd = selected_date.strftime("%Y-%m-%d")
 
-        # 데이터 로드 (with encoding fallback)
         def load_csv_with_fallback(path):
             for enc in ["utf-8-sig", "cp949", "euc-kr"]:
                 try:
@@ -291,18 +290,12 @@ with tab3:
         try:
             df_total = pd.read_csv("ML_asos_total_prediction.csv", encoding="utf-8-sig")
         except UnicodeDecodeError:
-            try:
-                df_total = pd.read_csv("ML_asos_total_prediction.csv", encoding="cp949")
-            except Exception as inner_e:
-                st.error(f"❌ 파일 인코딩 실패: {inner_e}")
-                st.stop()
+            df_total = pd.read_csv("ML_asos_total_prediction.csv", encoding="cp949")
 
         pred_row = df_total[df_total["일자"] == ymd]
-        if not pred_row.empty:
-            seoul_pred = float(pred_row["서울시예측환자수"].values[0])
-        else:
+        seoul_pred = float(pred_row["서울시예측환자수"].values[0]) if not pred_row.empty else 0
+        if seoul_pred == 0:
             st.warning(f"⚠️ {ymd} 예측값이 없습니다.")
-            seoul_pred = 0
 
         total_population = merged_all["전체인구"].sum()
         merged_all["예측환자수"] = seoul_pred * (merged_all["전체인구"] / total_population)
@@ -331,7 +324,6 @@ with tab3:
         )
 
         merged["실제환자수비율"] = merged["환자수"].fillna(0) / ml_data["환자수"].max()
-
         merged["피해점수"] = 10 * (
             0.4 * merged["S"] +
             0.3 * merged["E"] +
@@ -373,41 +365,79 @@ with tab3:
             real_ratio = float(merged["실제환자수비율"].values[0])
             score = float(merged["피해점수"].values[0])
 
-            st.markdown("### 🧬 S / E 구성요소")
-            st.markdown(f"""
-- **S 구성**  
-  - 🧓 고령자비율: `{merged['고령자비율'].values[0]:.4f}`  
-  - 🛠️ 야외근로자비율: `{merged['야외근로자비율'].values[0]:.4f}`  
-  - 🌡️ 열쾌적취약인구비율: `{merged['열쾌적취약인구비율'].values[0]:.4f}`
+            debug_log = f"""
+[피해점수 계산 로그 - {selected_gu} / {ymd}]
+--------------------------------------------------
+[S 계산]
+- 고령자비율              = {merged['고령자비율'].values[0]:.4f}
+- 야외근로자비율          = {merged['야외근로자비율'].values[0]:.4f}
+- 열쾌적취약인구비율      = {merged['열쾌적취약인구비율'].values[0]:.4f}
+=> S = {s_val:.4f}
 
-- **E 구성**  
-  - 🔥 열섬지수 표준화: `{merged['열섬지수_std'].values[0]:.4f}`  
-  - 🌳 녹지율 표준화: `{merged['녹지율_std'].values[0]:.4f}`  
-  - ❄️ 냉방보급률 표준화: `{merged['냉방보급률_std'].values[0]:.4f}`
-            """)
+[E 계산]
+- 열섬지수 (표준화)       = {merged['열섬지수_std'].values[0]:.4f}
+- 녹지율 (표준화)         = {merged['녹지율_std'].values[0]:.4f}
+- 냉방보급률 (표준화)     = {merged['냉방보급률_std'].values[0]:.4f}
+=> E = {e_val:.4f}
 
-            st.markdown("### 📊 피해점수 계산식")
-            st.markdown(f"""
-피해점수 = 10 × (0.4 × S + 0.3 × E + 0.2 × 예측환자수비율 + 0.1 × 실제환자수비율)
+[환자 수 비율]
+- 예측환자수비율          = {pred_ratio:.4f}
+- 실제환자수비율          = {real_ratio:.4f}
 
-🧾 **계산에 사용된 값**  
-- 🟦 S: `{s_val:.4f}`  
-- 🟩 E: `{e_val:.4f}`  
-- 🔵 예측환자수비율: `{pred_ratio:.4f}`  
-- 🟣 실제환자수비율: `{real_ratio:.4f}`
+[최종 피해점수 계산]
+피해점수 = 10 × (0.4×{s_val:.4f} + 0.3×{e_val:.4f} + 0.2×{pred_ratio:.4f} + 0.1×{real_ratio:.4f})
+         = {score:.4f}
+--------------------------------------------------
+"""
+            st.code(debug_log, language="text")
 
-✅ **결과**  
-피해점수 = 10 × (0.4×{s_val:.4f} + 0.3×{e_val:.4f} + 0.2×{pred_ratio:.4f} + 0.1×{real_ratio:.4f})  
-피해점수 = `{score:.4f}`
-            """)
+            st.download_button(
+                label="📄 현재 자치구 디버깅 로그 다운로드",
+                data=debug_log.encode("utf-8-sig"),
+                file_name=f"피해점수_디버깅_{ymd}_{selected_gu}.txt",
+                mime="text/plain"
+            )
 
-        csv_download = merged[show_cols]
-        csv_bytes = csv_download.to_csv(index=False).encode("utf-8-sig")
+        # 📥 전체 자치구 디버깅 로그 생성
+        all_debug_logs = ""
+        for _, row in merged_all.iterrows():
+            s = 0.5 * row["고령자비율"] + 0.3 * row["야외근로자비율"] + 0.2 * row["열쾌적취약인구비율"]
+            e = 0.5 * row["열섬지수_std"] + 0.3 * (1 - row["녹지율_std"]) + 0.2 * (1 - row["냉방보급률_std"])
+            pred_ratio = row["예측환자수비율"]
+            real_ratio = row["환자수"] / ml_data["환자수"].max() if ml_data["환자수"].max() != 0 else 0
+            score = 10 * (0.4 * s + 0.3 * e + 0.2 * pred_ratio + 0.1 * real_ratio)
+
+            log = f"""
+[피해점수 계산 로그 - {row['자치구']} / {ymd}]
+--------------------------------------------------
+[S 계산]
+- 고령자비율              = {row['고령자비율']:.4f}
+- 야외근로자비율          = {row['야외근로자비율']:.4f}
+- 열쾌적취약인구비율      = {row['열쾌적취약인구비율']:.4f}
+=> S = {s:.4f}
+
+[E 계산]
+- 열섬지수 (표준화)       = {row['열섬지수_std']:.4f}
+- 녹지율 (표준화)         = {row['녹지율_std']:.4f}
+- 냉방보급률 (표준화)     = {row['냉방보급률_std']:.4f}
+=> E = {e:.4f}
+
+[환자 수 비율]
+- 예측환자수비율          = {pred_ratio:.4f}
+- 실제환자수비율          = {real_ratio:.4f}
+
+[최종 피해점수 계산]
+피해점수 = 10 × (0.4×{s:.4f} + 0.3×{e:.4f} + 0.2×{pred_ratio:.4f} + 0.1×{real_ratio:.4f})
+         = {score:.4f}
+--------------------------------------------------
+"""
+            all_debug_logs += log + "\n"
+
         st.download_button(
-            "📥 분석 결과 CSV 다운로드",
-            data=csv_bytes,
-            file_name=f"피해점수_{ymd}_{selected_gu}.csv",
-            mime="text/csv"
+            label="📥 전체 자치구 디버깅 로그 다운로드",
+            data=all_debug_logs.encode("utf-8-sig"),
+            file_name=f"전체_피해점수_디버깅_{ymd}.txt",
+            mime="text/plain"
         )
 
     except Exception as e:
