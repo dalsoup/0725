@@ -301,13 +301,11 @@ with tab3:
         merged_all["예측환자수"] = seoul_pred * (merged_all["전체인구"] / total_population)
         merged_all["예측환자수비율"] = merged_all["예측환자수"] / seoul_pred
 
-        selected_gu = st.selectbox("🏘️ 자치구 선택", sorted(merged_all["자치구"].unique()))
-        merged = merged_all[merged_all["자치구"] == selected_gu].copy()
-
-        merged["S"] = (
-            0.5 * merged["고령자비율"].fillna(0) +
-            0.3 * merged["야외근로자비율"].fillna(0) +
-            0.2 * merged["열쾌적취약인구비율"].fillna(0)
+        # ✅ S 계산을 merged_all에서 바로!
+        merged_all["S"] = (
+            0.5 * merged_all["고령자비율"].fillna(0) +
+            0.3 * merged_all["야외근로자비율"].fillna(0) +
+            0.2 * merged_all["열쾌적취약인구비율"].fillna(0)
         )
 
         for col in ["열섬지수", "녹지율", "냉방보급률"]:
@@ -316,19 +314,19 @@ with tab3:
             range_val = max_val - min_val if max_val != min_val else 1
             merged_all[f"{col}_std"] = (merged_all[col] - min_val) / range_val
 
-        merged = merged_all[merged_all["자치구"] == selected_gu].copy()
-        merged["E"] = (
-            0.5 * merged["열섬지수_std"] +
-            0.3 * (1 - merged["녹지율_std"]) +
-            0.2 * (1 - merged["냉방보급률_std"])
+        # ✅ E도 merged_all에서 계산
+        merged_all["E"] = (
+            0.5 * merged_all["열섬지수_std"] +
+            0.3 * (1 - merged_all["녹지율_std"]) +
+            0.2 * (1 - merged_all["냉방보급률_std"])
         )
 
-        merged["실제환자수비율"] = merged["환자수"].fillna(0) / ml_data["환자수"].max()
-        merged["피해점수"] = 10 * (
-            0.4 * merged["S"] +
-            0.3 * merged["E"] +
-            0.2 * merged["예측환자수비율"] +
-            0.1 * merged["실제환자수비율"]
+        merged_all["실제환자수비율"] = merged_all["환자수"].fillna(0) / ml_data["환자수"].max()
+        merged_all["피해점수"] = 10 * (
+            0.4 * merged_all["S"] +
+            0.3 * merged_all["E"] +
+            0.2 * merged_all["예측환자수비율"] +
+            0.1 * merged_all["실제환자수비율"]
         )
 
         def score_to_grade(s):
@@ -338,8 +336,6 @@ with tab3:
             elif s < 50: return "🔴 높음"
             else: return "🔥 매우 높음"
 
-        merged["위험등급"] = merged["피해점수"].apply(score_to_grade)
-
         def calc_payout(score):
             if score < 20: return 0
             elif score < 30: return 5000
@@ -347,7 +343,11 @@ with tab3:
             elif score < 50: return 20000
             else: return 30000
 
-        merged["보상금"] = merged["피해점수"].apply(calc_payout)
+        merged_all["위험등급"] = merged_all["피해점수"].apply(score_to_grade)
+        merged_all["보상금"] = merged_all["피해점수"].apply(calc_payout)
+
+        selected_gu = st.selectbox("🏘️ 자치구 선택", sorted(merged_all["자치구"].unique()))
+        merged = merged_all[merged_all["자치구"] == selected_gu].copy()
 
         st.markdown("### 🧾 가입자 수 입력")
         subs_count = st.number_input(f"{selected_gu} 가입자 수", min_value=0, step=1, key="subs_tab3")
@@ -398,15 +398,14 @@ with tab3:
                 mime="text/plain"
             )
 
-        # 📥 전체 자치구 디버깅 로그 생성
+        # ✅ 전체 자치구 디버깅 로그
         all_debug_logs = ""
         for _, row in merged_all.iterrows():
-            s = 0.5 * row["고령자비율"] + 0.3 * row["야외근로자비율"] + 0.2 * row["열쾌적취약인구비율"]
-            e = 0.5 * row["열섬지수_std"] + 0.3 * (1 - row["녹지율_std"]) + 0.2 * (1 - row["냉방보급률_std"])
+            s = row["S"]
+            e = row["E"]
             pred_ratio = row["예측환자수비율"]
-            real_ratio = row["환자수"] / ml_data["환자수"].max() if ml_data["환자수"].max() != 0 else 0
-            score = 10 * (0.4 * s + 0.3 * e + 0.2 * pred_ratio + 0.1 * real_ratio)
-
+            real_ratio = row["실제환자수비율"]
+            score = row["피해점수"]
             log = f"""
 [피해점수 계산 로그 - {row['자치구']} / {ymd}]
 --------------------------------------------------
