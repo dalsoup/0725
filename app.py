@@ -265,7 +265,7 @@ with tab3:
         0.1 * merged["실제환자수비율"]
     )
 
-        # ✅ 4. 피해점수 기반 위험등급
+    # ✅ 4. 피해점수 기반 위험등급
         def score_to_grade(s):
             if s < 20: return "🟢 매우 낮음"
             elif s < 30: return "🟡 낮음"
@@ -275,7 +275,7 @@ with tab3:
 
         merged["위험등급"] = merged["피해점수"].apply(score_to_grade)
 
-        # ✅ 5. 보상금 계산
+    # ✅ 5. 보상금 계산
         def calc_payout(score):
             if score < 20: return 0
             elif score < 30: return 5000
@@ -285,18 +285,18 @@ with tab3:
 
         merged["보상금"] = merged["피해점수"].apply(calc_payout)
 
-        # ✅ 6. 가입자 수 입력 및 총 보상금 계산
+    # ✅ 6. 가입자 수 입력 및 총 보상금 계산
         st.markdown("### 🧾 가입자 수 입력")
         subs_count = st.number_input(f"{selected_gu} 가입자 수", min_value=0, step=1, key="subs_tab3")
         merged["가입자수"] = subs_count
         merged["예상총보상금"] = merged["보상금"] * subs_count
         st.success(f"💰 예상 보상금액: {int(merged['예상총보상금'].values[0]):,}원")
 
-        # ✅ 7. 결과 테이블 출력
+    # ✅ 7. 결과 테이블 출력
         show_cols = ["자치구", "피해점수", "위험등급", "보상금", "가입자수", "예상총보상금"]
         st.dataframe(merged[show_cols], use_container_width=True)
 
-        # ✅ 8. 보고서 PDF 저장 (CSV 다운로드 대체)
+    # ✅ 8. 보고서 PDF 저장 (CSV 다운로드 대체)
         csv_download = merged[show_cols]
         csv_bytes = csv_download.to_csv(index=False).encode("utf-8-sig")
         st.download_button("📥 분석 결과 CSV 다운로드", data=csv_bytes, file_name=f"피해점수_{ymd}_{selected_gu}.csv", mime="text/csv")
