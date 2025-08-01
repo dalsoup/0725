@@ -284,7 +284,11 @@ with tab3:
         try:
             df_total = pd.read_csv("ML_asos_total_prediction.csv", encoding="utf-8-sig")
         except UnicodeDecodeError:
-            df_total = pd.read_csv("ML_asos_total_prediction.csv", encoding="cp949")
+            try:
+                df_total = pd.read_csv("ML_asos_total_prediction.csv", encoding="cp949")
+            except Exception as inner_e:
+                st.error(f"❌ 파일 인코딩 실패: {inner_e}")
+                st.stop()
 
         pred_row = df_total[df_total["일자"] == ymd]
         if not pred_row.empty:
@@ -408,5 +412,4 @@ with tab3:
 
     except Exception as e:
         st.error(f"❌ 분석 실패: {e}")
-
 
