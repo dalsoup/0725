@@ -254,7 +254,8 @@ gu = st.selectbox("🏘️ 자치구 선택", [
 
 # ✅ 2. 질병청 엑셀 파일 업로드
 uploaded_file = st.file_uploader("📎 질병청 환자수 파일 업로드 (.xlsx, 시트명: 서울특별시)", type=["xlsx"])
-    if uploaded_file:
+
+if uploaded_file:
     try:
         df_raw = pd.read_excel(uploaded_file, sheet_name="서울특별시", header=None)
         districts = df_raw.iloc[0, 1::2].tolist()
