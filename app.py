@@ -120,10 +120,11 @@ with tab2:
     if not gus:
         gus = all_gus
 
-    # 날짜 복수 선택
+    # ✅ 날짜 선택: pandas → date 변환
     min_record_date = datetime.date(2021, 5, 1)
     max_record_date = datetime.date.today() - datetime.timedelta(days=1)
-    date_range = pd.date_range(min_record_date, max_record_date, freq='D').to_list()
+    date_range = [d.date() for d in pd.date_range(min_record_date, max_record_date, freq='D')]
+
     dates_selected = st.multiselect("📅 기록할 날짜 (복수 선택 가능)", date_range, default=[max_record_date])
 
     uploaded_file = st.file_uploader("📎 질병청 환자수 파일 업로드 (.xlsx, 시트명: 서울특별시)", type=["xlsx"], key="upload_tab2")
@@ -172,6 +173,7 @@ with tab2:
                     })
 
             if not preview_list:
+                st.warning("❌ 선택한 날짜와 자치구 조합에 저장할 데이터가 없습니다.")
                 st.stop()
 
             preview_df = pd.DataFrame(preview_list)
@@ -216,7 +218,7 @@ with tab2:
                 r = requests.put(api_url, headers=headers, json=payload)
                 if r.status_code in [200, 201]:
                     st.success("✅ GitHub 저장 완료")
-                    st.info(f"🔗 [파일 바로 확인하기](https://github.com/{GITHUB_USERNAME}/{GITHUB_REPO}/blob/{GITHUB_BRANCH}/{GITHUB_FILENAME})")
+                    st.info(f"🔗 [GitHub에서 보기](https://github.com/{GITHUB_USERNAME}/{GITHUB_REPO}/blob/{GITHUB_BRANCH}/{GITHUB_FILENAME})")
                 else:
                     st.warning(f"⚠️ GitHub 저장 실패: {r.status_code} {r.text[:200]}")
 
