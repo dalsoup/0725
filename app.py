@@ -206,3 +206,78 @@ with tab2:
 
         except Exception as e:
             st.error(f"❌ 처리 중 오류 발생: {e}")
+
+with tab3:
+    st.header("📍 자치구별 피해점수 및 보상 산정")
+
+    # ✅ 1. 날짜 선택
+    today = datetime.date.today()
+    min_date = datetime.date(2021, 5, 1)
+    max_date = today - datetime.timedelta(days=1)
+    selected_date = st.date_input("📅 분석 날짜 선택", value=max_date, min_value=min_date, max_value=max_date, key="date_tab3")
+    ymd = selected_date.strftime("%Y-%m-%d")
+
+    # ✅ 2. 데이터 로딩
+    try:
+        ml_data = pd.read_csv("ML_asos_dataset.csv", encoding="utf-8-sig")
+        static_data = pd.read_csv("seoul_static_data.csv")
+
+        merged = pd.merge(ml_data, static_data, on="자치구", how="left")
+        merged = merged[merged["일자"] == ymd].copy()
+
+        # ✅ 자치구 선택
+        gu_options = sorted(merged["자치구"].unique())
+        selected_gu = st.selectbox("🏘️ 자치구 선택", gu_options, key="gu_tab3")
+        merged = merged[merged["자치구"] == selected_gu].copy()
+
+        # ✅ 3. 피해점수 계산
+        alpha, beta, theta = 0.5, 0.3, 0.2
+        merged["S"] = alpha * merged["고령자비율"] + beta * merged["야외근로자비율"] + theta * merged["열쾌적취약인구비율"]
+
+        gamma, delta, epsilon = 0.5, 0.3, 0.2
+        for col in ["열섬지수", "녹지율", "냉방보급률"]:
+            col_std = (merged[col] - merged[col].min()) / (merged[col].max() - merged[col].min())
+            merged[f"{col}_std"] = col_std
+
+        E = gamma * merged["열섬지수_std"] + delta * (1 - merged["녹지율_std"]) + epsilon * (1 - merged["냉방보급률_std"])
+        merged["E"] = E
+        merged["피해점수"] = 10 * (merged["S"] + merged["E"])
+
+        # ✅ 4. 피해점수 기반 위험등급
+        def score_to_grade(s):
+            if s < 20: return "🟢 매우 낮음"
+            elif s < 30: return "🟡 낮음"
+            elif s < 40: return "🟠 보통"
+            elif s < 50: return "🔴 높음"
+            else: return "🔥 매우 높음"
+
+        merged["위험등급"] = merged["피해점수"].apply(score_to_grade)
+
+        # ✅ 5. 보상금 계산
+        def calc_payout(score):
+            if score < 20: return 0
+            elif score < 30: return 5000
+            elif score < 40: return 10000
+            elif score < 50: return 20000
+            else: return 30000
+
+        merged["보상금"] = merged["피해점수"].apply(calc_payout)
+
+        # ✅ 6. 가입자 수 입력 및 총 보상금 계산
+        st.markdown("### 🧾 가입자 수 입력")
+        subs_count = st.number_input(f"{selected_gu} 가입자 수", min_value=0, step=1, key="subs_tab3")
+        merged["가입자수"] = subs_count
+        merged["예상총보상금"] = merged["보상금"] * subs_count
+        st.success(f"💰 예상 보상금액: {int(merged['예상총보상금'].values[0]):,}원")
+
+        # ✅ 7. 결과 테이블 출력
+        show_cols = ["자치구", "피해점수", "위험등급", "보상금", "가입자수", "예상총보상금"]
+        st.dataframe(merged[show_cols], use_container_width=True)
+
+        # ✅ 8. 보고서 PDF 저장 (CSV 다운로드 대체)
+        csv_download = merged[show_cols]
+        csv_bytes = csv_download.to_csv(index=False).encode("utf-8-sig")
+        st.download_button("📥 분석 결과 CSV 다운로드", data=csv_bytes, file_name=f"피해점수_{ymd}_{selected_gu}.csv", mime="text/csv")
+
+    except Exception as e:
+        st.error(f"❌ 분석 실패: {e}")
