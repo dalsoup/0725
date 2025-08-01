@@ -6,7 +6,7 @@ from sklearn.model_selection import train_test_split
 
 # ✅ 파일 경로
 STATIC_FILE = "ML_7_8월_2021_2025_dataset.xlsx"
-DYNAMIC_FILE = "ML_asos_dataset_by_gu.csv"
+DYNAMIC_FILE = "ML_asos_dataset.csv"
 MODEL_FILE = "trained_model.pkl"
 FEATURE_FILE = "feature_names.pkl"
 
