@@ -140,6 +140,29 @@ def predict_from_weather(tmx, tmn, reh):
     pred = model.predict(X)[0]
     return pred, avg_temp, input_df
 
+def get_last_year_patient_count(current_date, region, static_file="ML_7_8월_2021_2025_dataset.xlsx"):
+    try:
+        # 현재 날짜의 전년도 날짜 구하기
+        last_year_date = current_date - datetime.timedelta(days=365)
+
+        # 엑셀 파일 읽기
+        df_all = pd.read_excel(static_file, engine="openpyxl")
+
+        # 날짜 컬럼 처리
+        df_all["일시"] = pd.to_datetime("1899-12-30") + pd.to_timedelta(df_all["일시"], unit="D")
+        df_all["일자"] = df_all["일시"].dt.strftime("%Y-%m-%d")
+
+        # 전년도 동일 일자의 데이터 필터링
+        cond = (df_all["일자"] == last_year_date.strftime("%Y-%m-%d")) & (df_all["광역자치단체"] == region)
+        row = df_all[cond]
+
+        if not row.empty:
+            return int(row["환자수"].values[0])
+        else:
+            return None
+    except Exception as e:
+        return None
+
 # ----------------------- 🧭 UI 시작 -----------------------
 st.title("HeatAI")
 tab1, tab2 = st.tabs(["📊 폭염트리거 예측하기", "📥 AI 학습 데이터 추가"])
@@ -191,7 +214,15 @@ with tab1:
         c1, c2 = st.columns(2)
         c1.metric("예측 환자 수", f"{pred:.2f}명")
         c2.metric("위험 등급", risk)
-        st.caption(f"전년도 평균(6.8명) 대비 {'+' if pred - 6.8 >= 0 else ''}{pred - 6.8:.1f}명")
+
+        # 전년도 환자 수 비교
+        last_year_count = get_last_year_patient_count(date_selected, region)
+        if last_year_count is not None:
+            delta_from_last_year = pred - last_year_count
+            st.markdown(f"📅 **전년도({(date_selected - datetime.timedelta(days=365)).strftime('%Y-%m-%d')}) 동일 날짜 환자수**: **{last_year_count}명**")
+            st.markdown(f"📈 **전년 대비 증감**: {'+' if delta_from_last_year >= 0 else ''}{delta_from_last_year:.1f}명")
+        else:
+            st.markdown("📭 전년도 동일 날짜의 환자 수 데이터를 찾을 수 없습니다.")
 
 # ====================================================================
 # 📥 AI 학습 데이터 추가
