@@ -1,17 +1,19 @@
 import streamlit as st
 import pandas as pd
 import datetime
-import joblib
 import requests
-import math
 import os
 import base64
 from urllib.parse import unquote
 
+from utils import (
+    get_weather, get_asos_weather, get_risk_level,
+    calculate_avg_temp, region_to_stn_id
+)
+from model_utils import predict_from_weather
+
 # ----------------------- 📦 설정 -----------------------
 st.set_page_config(layout="centered")
-model = joblib.load("trained_model.pkl")
-feature_names = joblib.load("feature_names.pkl")
 
 KMA_API_KEY = unquote(st.secrets["KMA"]["API_KEY"])
 ASOS_API_KEY = unquote(st.secrets["ASOS"]["API_KEY"])
@@ -21,177 +23,29 @@ GITHUB_BRANCH = st.secrets["GITHUB"]["BRANCH"]
 GITHUB_TOKEN = st.secrets["GITHUB"]["TOKEN"]
 GITHUB_FILENAME = "ML_asos_dataset.csv"
 
-region_to_stn_id = {
-    "서울특별시": 108, "부산광역시": 159, "대구광역시": 143, "인천광역시": 112,
-    "광주광역시": 156, "대전광역시": 133, "울산광역시": 152, "세종특별자치시": 131,
-    "경기도": 119, "강원도": 101, "충청북도": 131, "충청남도": 133,
-    "전라북도": 146, "전라남도": 165, "경상북도": 137, "경상남도": 155, "제주특별자치도": 184
-}
-
-region_to_latlon = {
-    "서울특별시": (37.5665, 126.9780), "부산광역시": (35.1796, 129.0756), "대구광역시": (35.8722, 128.6025),
-    "인천광역시": (37.4563, 126.7052), "광주광역시": (35.1595, 126.8526), "대전광역시": (36.3504, 127.3845),
-    "울산광역시": (35.5384, 129.3114), "세종특별자치시": (36.4800, 127.2890), "경기도": (37.4138, 127.5183),
-    "강원도": (37.8228, 128.1555), "충청북도": (36.6358, 127.4917), "충청남도": (36.5184, 126.8000),
-    "전라북도": (35.7167, 127.1442), "전라남도": (34.8161, 126.4630), "경상북도": (36.5760, 128.5056),
-    "경상남도": (35.4606, 128.2132), "제주특별자치도": (33.4996, 126.5312)
-}
-
-# ----------------------- 🔁 공통 함수 -----------------------
-def convert_latlon_to_xy(lat, lon):
-    RE, GRID = 6371.00877, 5.0
-    SLAT1, SLAT2, OLON, OLAT = 30.0, 60.0, 126.0, 38.0
-    XO, YO = 43, 136
-    DEGRAD = math.pi / 180.0
-    re = RE / GRID
-    slat1, slat2 = SLAT1 * DEGRAD, SLAT2 * DEGRAD
-    olon, olat = OLON * DEGRAD, OLAT * DEGRAD
-    sn = math.log(math.cos(slat1)/math.cos(slat2)) / math.log(math.tan(math.pi/4+slat2/2)/math.tan(math.pi/4+slat1/2))
-    sf = math.tan(math.pi/4+slat1/2)**sn * math.cos(slat1)/sn
-    ro = re * sf / (math.tan(math.pi/4+olat/2)**sn)
-    ra = re * sf / (math.tan(math.pi/4+lat*DEGRAD/2)**sn)
-    theta = lon * DEGRAD - olon
-    if theta > math.pi: theta -= 2*math.pi
-    if theta < -math.pi: theta += 2*math.pi
-    theta *= sn
-    x = ra * math.sin(theta) + XO + 0.5
-    y = ro - ra * math.cos(theta) + YO + 0.5
-    return int(x), int(y)
-
-def get_fixed_base_datetime(target_date):
-    today = datetime.date.today()
-    now = datetime.datetime.now()
-    if target_date == today:
-        hour = now.hour
-        if hour >= 23: bt = "2300"
-        elif hour >= 20: bt = "2000"
-        elif hour >= 17: bt = "1700"
-        elif hour >= 14: bt = "1400"
-        elif hour >= 11: bt = "1100"
-        elif hour >= 8: bt = "0800"
-        elif hour >= 5: bt = "0500"
-        else: bt = "0200"
-        return today.strftime("%Y%m%d"), bt
-    else:
-        return today.strftime("%Y%m%d"), "0500"
-
-def get_weather(region_name, target_date):
-    latlon = region_to_latlon.get(region_name, (37.5665, 126.9780))
-    nx, ny = convert_latlon_to_xy(*latlon)
-    base_date, base_time = get_fixed_base_datetime(target_date)
-    params = {
-        "serviceKey": KMA_API_KEY,
-        "numOfRows": "1000",
-        "pageNo": "1",
-        "dataType": "JSON",
-        "base_date": base_date,
-        "base_time": base_time,
-        "nx": nx,
-        "ny": ny
-    }
-    try:
-        r = requests.get("http://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getVilageFcst", params=params, timeout=10, verify=False)
-        items = r.json().get("response", {}).get("body", {}).get("items", {}).get("item", [])
-        df = pd.DataFrame(items)
-        df["fcstDate"] = df["fcstDate"].astype(str)
-        target_str = target_date.strftime("%Y%m%d")
-        if target_str not in df["fcstDate"].values:
-            return {}, base_date, base_time
-        df = df[df["fcstDate"] == target_str]
-        df = df[df["category"].isin(["T3H", "TMX", "TMN", "REH"])]
-        summary = {}
-        for cat in ["TMX", "TMN", "REH", "T3H"]:
-            vals = df[df["category"] == cat]["fcstValue"].astype(float)
-            if not vals.empty:
-                summary[cat] = vals.mean() if cat in ["REH", "T3H"] else vals.iloc[0]
-        return summary, base_date, base_time
-    except:
-        return {}, base_date, base_time
-
-def get_asos_weather(region, ymd):
-    stn_id = region_to_stn_id[region]
-    url = f"http://apis.data.go.kr/1360000/AsosDalyInfoService/getWthrDataList?serviceKey={ASOS_API_KEY}&pageNo=1&numOfRows=10&dataType=JSON&dataCd=ASOS&dateCd=DAY&startDt={ymd}&endDt={ymd}&stnIds={stn_id}"
-    r = requests.get(url, timeout=10, verify=False)
-    j = r.json()
-    item = j.get("response", {}).get("body", {}).get("items", {}).get("item", [])[0]
-    return {
-        "TMX": float(item["maxTa"]),
-        "TMN": float(item["minTa"]),
-        "REH": float(item["avgRhm"])
-    }
-
-def get_risk_level(pred):
-    if pred == 0: return "🟢 매우 낮음"
-    elif pred <= 2: return "🟡 낮음"
-    elif pred <= 5: return "🟠 보통"
-    elif pred <= 10: return "🔴 높음"
-    else: return "🔥 매우 높음"
-
-def predict_from_weather(tmx, tmn, reh):
-    avg_temp = round((tmx + tmn) / 2, 1)
-    input_df = pd.DataFrame([{ 
-        "최고체감온도(°C)": tmx + 1.5,
-        "최고기온(°C)": tmx,
-        "평균기온(°C)": avg_temp,
-        "최저기온(°C)": tmn,
-        "평균상대습도(%)": reh
-    }])
-    X = input_df[feature_names] 
-    pred = model.predict(X)[0]
-    return pred, avg_temp, input_df
-
-def get_last_year_patient_count(current_date, region, static_file="ML_7_8월_2021_2025_dataset.xlsx"):
-    try:
-        # 현재 날짜의 전년도 날짜 구하기
-        last_year_date = current_date - datetime.timedelta(days=365)
-
-        # 엑셀 파일 읽기
-        df_all = pd.read_excel(static_file, engine="openpyxl")
-
-        # 날짜 컬럼 처리
-        df_all["일시"] = pd.to_datetime("1899-12-30") + pd.to_timedelta(df_all["일시"], unit="D")
-        df_all["일자"] = df_all["일시"].dt.strftime("%Y-%m-%d")
-
-        # 전년도 동일 일자의 데이터 필터링
-        cond = (df_all["일자"] == last_year_date.strftime("%Y-%m-%d")) & (df_all["광역자치단체"] == region)
-        row = df_all[cond]
-
-        if not row.empty:
-            return int(row["환자수"].values[0])
-        else:
-            return None
-    except Exception as e:
-        return None
-
 # ----------------------- 🧭 UI 시작 -----------------------
 st.title("HeatAI")
 tab1, tab2 = st.tabs(["📊 폭염트리거 예측하기", "📥 AI 학습 데이터 추가"])
+
 # ====================================================================
 # 🔮 예측 탭
 # ====================================================================
 with tab1:
     st.header("📊 폭염트리거 예측하기")
-    
-    # 📅 날짜 제한: 오늘 ~ 오늘 + 4일
+
     today = datetime.date.today()
     min_pred_date = today
     max_pred_date = today + datetime.timedelta(days=4)
 
     region = st.selectbox("지역 선택", list(region_to_stn_id.keys()), key="region_tab1")
-    date_selected = st.date_input(
-        "날짜 선택",
-        value=today,
-        min_value=min_pred_date,
-        max_value=max_pred_date,
-        key="date_tab1"
-    )
+    date_selected = st.date_input("날짜 선택", value=today, min_value=min_pred_date, max_value=max_pred_date, key="date_tab1")
 
     if st.button("🔍 예측하기", key="predict_tab1"):
         if date_selected >= today:
-            weather, base_date, base_time = get_weather(region, date_selected)
+            weather, base_date, base_time = get_weather(region, date_selected, KMA_API_KEY)
         else:
             ymd = date_selected.strftime("%Y%m%d")
-            weather = get_asos_weather(region, ymd)
+            weather = get_asos_weather(region, ymd, ASOS_API_KEY)
 
         if not weather:
             st.error("❌ 기상 정보 없음")
@@ -216,6 +70,21 @@ with tab1:
         c1.metric("예측 환자 수", f"{pred:.2f}명")
         c2.metric("위험 등급", risk)
 
+        def get_last_year_patient_count(current_date, region, static_file="ML_7_8월_2021_2025_dataset.xlsx"):
+            try:
+                last_year_date = current_date - datetime.timedelta(days=365)
+                df_all = pd.read_excel(static_file, engine="openpyxl")
+                df_all["일시"] = pd.to_datetime("1899-12-30") + pd.to_timedelta(df_all["일시"], unit="D")
+                df_all["일자"] = df_all["일시"].dt.strftime("%Y-%m-%d")
+                cond = (df_all["일자"] == last_year_date.strftime("%Y-%m-%d")) & (df_all["광역자치단체"] == region)
+                row = df_all[cond]
+                if not row.empty:
+                    return int(row["환자수"].values[0])
+                else:
+                    return None
+            except:
+                return None
+
         last_year_count = get_last_year_patient_count(date_selected, region)
         if last_year_count is not None:
             delta = pred - last_year_count
@@ -223,6 +92,7 @@ with tab1:
             st.markdown(f"📈 **전년 대비 증감**: {'+' if delta >= 0 else ''}{delta:.1f}명")
         else:
             st.markdown("📭 전년도 동일 날짜의 환자 수 데이터를 찾을 수 없습니다.")
+
 # ====================================================================
 # 📥 AI 학습 데이터 추가
 # ====================================================================
@@ -238,7 +108,6 @@ with tab2:
 
     st.header("📥 자치구별 실제 폭염 데이터 저장하기")
 
-    # ✅ 1. 날짜, 광역시도, 자치구 선택
     today = datetime.date.today()
     min_record_date = datetime.date(2021, 5, 1)
     max_record_date = today - datetime.timedelta(days=1)
@@ -251,7 +120,6 @@ with tab2:
         '동작구', '관악구', '서초구', '강남구', '송파구', '강동구'
     ], key="gu_tab2")
 
-    # ✅ 2. 질병청 엑셀 파일 업로드
     uploaded_file = st.file_uploader("📎 질병청 환자수 파일 업로드 (.xlsx, 시트명: 서울특별시)", type=["xlsx"], key="upload_tab2")
 
     if uploaded_file:
@@ -267,7 +135,6 @@ with tab2:
             df_long["환자수"] = pd.to_numeric(df_long["환자수"], errors="coerce").fillna(0).astype(int)
             df_long["지역"] = "서울특별시"
 
-            # ✅ 3. 선택된 날짜+자치구의 환자수 확인
             ymd = date_selected.strftime("%Y-%m-%d")
             selected = df_long[(df_long["일자"] == ymd) & (df_long["자치구"] == gu)]
             if selected.empty:
@@ -275,15 +142,12 @@ with tab2:
                 st.stop()
             환자수 = int(selected["환자수"].values[0])
 
-            # ✅ 4. 기상청 ASOS API로 실제 기온 데이터 가져오기
-            from app import get_asos_weather
-            weather = get_asos_weather(region, ymd.replace("-", ""))
+            weather = get_asos_weather(region, ymd.replace("-", ""), ASOS_API_KEY)
             tmx = weather.get("TMX", 0)
             tmn = weather.get("TMN", 0)
             reh = weather.get("REH", 0)
-            avg_temp = round((tmx + tmn) / 2, 1)
+            avg_temp = calculate_avg_temp(tmx, tmn)
 
-            # ✅ 5. 통합 표 표시
             st.markdown("### ✅ 저장될 학습 데이터")
             preview_df = pd.DataFrame([{ 
                 "일자": ymd,
@@ -298,7 +162,6 @@ with tab2:
             }])
             st.dataframe(preview_df)
 
-            # ✅ 6. GitHub 저장 버튼
             if st.button("💾 GitHub에 저장하기", key="save_tab2"):
                 csv_path = "ML_asos_dataset.csv"
                 if os.path.exists(csv_path):
@@ -312,13 +175,6 @@ with tab2:
                     df_all = preview_df
 
                 df_all.to_csv(csv_path, index=False, encoding="utf-8-sig")
-
-                # ✅ GitHub API 업로드
-                GITHUB_USERNAME = st.secrets["GITHUB"]["USERNAME"]
-                GITHUB_REPO = st.secrets["GITHUB"]["REPO"]
-                GITHUB_BRANCH = st.secrets["GITHUB"]["BRANCH"]
-                GITHUB_TOKEN = st.secrets["GITHUB"]["TOKEN"]
-                GITHUB_FILENAME = "ML_asos_dataset.csv"
 
                 with open(csv_path, "rb") as f:
                     content = f.read()
