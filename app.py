@@ -100,7 +100,7 @@ with tab2:
     with st.expander("ℹ️ tab2 사용법"):
         st.markdown("""
         **✅ 사용 방법**  
-        1. 날짜와 자치구를 선택하세요.  
+        1. 날짜(복수 가능)와 자치구(전체 또는 일부)를 선택하세요.  
         2. 아래 링크에서 질병청의 온열질환자 엑셀 파일을 다운로드해 업로드하세요.  
            👉 [온열질환 응급실감시체계 다운로드](https://www.kdca.go.kr/board/board.es?mid=a20205030102&bid=0004&&cg_code=C01)  
         3. **저장하기** 버튼을 누르면, 해당 데이터는 tab3의 자치구별 피해점수 산정을 위한 입력값으로 자동 반영됩니다.
@@ -108,22 +108,27 @@ with tab2:
 
     st.header("📥 자치구별 실제 폭염 데이터 저장하기")
 
-    today = datetime.date.today()
-    min_record_date = datetime.date(2021, 5, 1)
-    max_record_date = today - datetime.timedelta(days=1)
-
-    date_selected = st.date_input("📅 기록할 날짜", value=max_record_date, min_value=min_record_date, max_value=max_record_date, key="date_tab2")
     region = st.selectbox("🌐 광역시도 선택", ["서울특별시"], key="region_tab2")
 
-    gus = st.multiselect("🏘️ 자치구 선택", [
+    all_gus = [
         '종로구', '중구', '용산구', '성동구', '광진구', '동대문구', '중랑구', '성북구', '강북구', '도봉구',
         '노원구', '은평구', '서대문구', '마포구', '양천구', '강서구', '구로구', '금천구', '영등포구',
         '동작구', '관악구', '서초구', '강남구', '송파구', '강동구'
-    ], default=["중구"], key="gu_tab2_multi")
+    ]
+
+    gus = st.multiselect("🏘️ 자치구 선택 (선택하지 않으면 전체)", all_gus, key="gu_tab2_multi")
+    if not gus:
+        gus = all_gus
+
+    # 날짜 복수 선택
+    min_record_date = datetime.date(2021, 5, 1)
+    max_record_date = datetime.date.today() - datetime.timedelta(days=1)
+    date_range = pd.date_range(min_record_date, max_record_date, freq='D').to_list()
+    dates_selected = st.multiselect("📅 기록할 날짜 (복수 선택 가능)", date_range, default=[max_record_date])
 
     uploaded_file = st.file_uploader("📎 질병청 환자수 파일 업로드 (.xlsx, 시트명: 서울특별시)", type=["xlsx"], key="upload_tab2")
 
-    if uploaded_file and gus:
+    if uploaded_file and dates_selected:
         try:
             df_raw = pd.read_excel(uploaded_file, sheet_name="서울특별시", header=None)
             districts = df_raw.iloc[0, 1::2].tolist()
@@ -136,33 +141,35 @@ with tab2:
             df_long["환자수"] = pd.to_numeric(df_long["환자수"], errors="coerce").fillna(0).astype(int)
             df_long["지역"] = "서울특별시"
 
-            ymd = date_selected.strftime("%Y-%m-%d")
-            weather = get_asos_weather(region, ymd.replace("-", ""), ASOS_API_KEY)
-            tmx = weather.get("TMX", 0)
-            tmn = weather.get("TMN", 0)
-            reh = weather.get("REH", 0)
-            avg_temp = calculate_avg_temp(tmx, tmn)
-
             preview_list = []
 
-            for gu in gus:
-                selected = df_long[(df_long["일자"] == ymd) & (df_long["자치구"] == gu)]
-                if selected.empty:
-                    st.warning(f"❌ {ymd} {gu} 환자수 데이터가 없습니다.")
-                    continue
+            for date_selected in dates_selected:
+                ymd = date_selected.strftime("%Y-%m-%d")
 
-                환자수 = int(selected["환자수"].values[0])
-                preview_list.append({
-                    "일자": ymd,
-                    "지역": region,
-                    "자치구": gu,
-                    "최고체감온도(°C)": tmx + 1.5,
-                    "최고기온(°C)": tmx,
-                    "평균기온(°C)": avg_temp,
-                    "최저기온(°C)": tmn,
-                    "평균상대습도(%)": reh,
-                    "환자수": 환자수
-                })
+                weather = get_asos_weather(region, ymd.replace("-", ""), ASOS_API_KEY)
+                tmx = weather.get("TMX", 0)
+                tmn = weather.get("TMN", 0)
+                reh = weather.get("REH", 0)
+                avg_temp = calculate_avg_temp(tmx, tmn)
+
+                for gu in gus:
+                    selected = df_long[(df_long["일자"] == ymd) & (df_long["자치구"] == gu)]
+                    if selected.empty:
+                        st.warning(f"❌ {ymd} {gu} 환자수 데이터가 없습니다.")
+                        continue
+
+                    환자수 = int(selected["환자수"].values[0])
+                    preview_list.append({
+                        "일자": ymd,
+                        "지역": region,
+                        "자치구": gu,
+                        "최고체감온도(°C)": tmx + 1.5,
+                        "최고기온(°C)": tmx,
+                        "평균기온(°C)": avg_temp,
+                        "최저기온(°C)": tmn,
+                        "평균상대습도(%)": reh,
+                        "환자수": 환자수
+                    })
 
             if not preview_list:
                 st.stop()
@@ -178,8 +185,8 @@ with tab2:
                         existing = pd.read_csv(csv_path, encoding="utf-8-sig")
                     except UnicodeDecodeError:
                         existing = pd.read_csv(csv_path, encoding="cp949")
-                    for gu in gus:
-                        existing = existing[~((existing["일자"] == ymd) & (existing["자치구"] == gu))]
+                    for row in preview_list:
+                        existing = existing[~((existing["일자"] == row["일자"]) & (existing["자치구"] == row["자치구"]))]
                     df_all = pd.concat([existing, preview_df], ignore_index=True)
                 else:
                     df_all = preview_df
@@ -195,7 +202,7 @@ with tab2:
                 sha = r.json().get("sha") if r.status_code == 200 else None
 
                 payload = {
-                    "message": f"Update {GITHUB_FILENAME} with new data for {ymd} {region} {', '.join(gus)}",
+                    "message": f"Update {GITHUB_FILENAME} with new data for {region} ({len(preview_list)} entries)",
                     "content": b64_content,
                     "branch": GITHUB_BRANCH
                 }
