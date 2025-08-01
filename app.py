@@ -70,6 +70,27 @@ with tab1:
         c1.metric("예측 환자 수", f"{pred:.2f}명")
         c2.metric("위험 등급", risk)
 
+        # ✅ 예측 결과 CSV로 저장
+        SAVE_FILE = "ML_asos_total_prediction.csv"
+
+        try:
+            df_total = pd.read_csv(SAVE_FILE, encoding="utf-8-sig")
+        except FileNotFoundError:
+            df_total = pd.DataFrame(columns=["일자", "서울시예측환자수"])
+
+        today_row = pd.DataFrame([{
+            "일자": date_selected.strftime("%Y-%m-%d"),
+            "서울시예측환자수": round(pred, 2)
+        }])
+
+        # 기존 동일 날짜 데이터 제거 후 갱신
+        df_total = df_total[df_total["일자"] != today_row.iloc[0]["일자"]]
+        df_total = pd.concat([df_total, today_row], ignore_index=True)
+        df_total.to_csv(SAVE_FILE, index=False, encoding="utf-8-sig")
+
+        st.success(f"✅ 예측값이 '{SAVE_FILE}'에 저장되었습니다.")
+
+
         def get_last_year_patient_count(current_date, region, static_file="ML_7_8월_2021_2025_dataset.xlsx"):
             try:
                 last_year_date = current_date - datetime.timedelta(days=365)
@@ -238,11 +259,31 @@ with tab3:
         static_data = pd.read_csv("seoul_static_data.csv", encoding="utf-8-sig")
 
         # ✅ 자치구 병합 및 필터링
-        merged = pd.merge(ml_data, static_data, on="자치구", how="left")
+        merged = pd.merge(static_data, ml_data, on="자치구", how="left")
         merged = merged[merged["일자"] == ymd].copy()
+
+        if merged.empty:
+            st.warning("❗️선택한 날짜의 정적 데이터가 없습니다.")
+            st.stop()
 
         selected_gu = st.selectbox("🏘️ 자치구 선택", sorted(merged["자치구"].unique()))
         merged = merged[merged["자치구"] == selected_gu].copy()
+
+        # ✅ 서울시 전체 예측값 불러오기
+        try:
+            df_total = pd.read_csv("ML_asos_total_prediction.csv", encoding="utf-8-sig")
+            pred_row = df_total[df_total["일자"] == ymd]
+            if not pred_row.empty:
+                seoul_pred = float(pred_row["서울시예측환자수"].values[0])
+            else:
+                st.warning("❗️선택한 날짜의 예측환자수가 없습니다.")
+                seoul_pred = 0
+        except:
+            st.error("❌ 서울시 예측값 파일을 불러오는 데 실패했습니다.")
+            seoul_pred = 0
+
+        # ✅ 예측환자수 자치구별로 일괄 적용
+        merged["예측환자수"] = seoul_pred
 
         # ✅ 사회적 취약성 지수 S 계산
         merged["S"] = 0.5 * merged["고령자비율"].fillna(0) + \
@@ -259,7 +300,7 @@ with tab3:
                       0.2 * (1 - merged["냉방보급률_std"])
 
         # ✅ 예측/실제 환자수 비율
-        merged["예측환자수비율"] = merged["예측환자수"] / ml_data["예측환자수"].max()
+        merged["예측환자수비율"] = merged["예측환자수"] / seoul_pred if seoul_pred != 0 else 0
         merged["실제환자수비율"] = merged["환자수"] / ml_data["환자수"].max()
 
         # ✅ 피해점수 계산
@@ -270,24 +311,22 @@ with tab3:
             0.1 * merged["실제환자수비율"]
         )
 
-        # ✅ 위험등급 함수 정의
+        # ✅ 위험등급 계산
         def score_to_grade(s):
             if s < 20: return "🟢 매우 낮음"
             elif s < 30: return "🟡 낮음"
             elif s < 40: return "🟠 보통"
             elif s < 50: return "🔴 높음"
             else: return "🔥 매우 높음"
-
         merged["위험등급"] = merged["피해점수"].apply(score_to_grade)
 
-        # ✅ 보상금 계산 함수 정의
+        # ✅ 보상금 계산
         def calc_payout(score):
             if score < 20: return 0
             elif score < 30: return 5000
             elif score < 40: return 10000
             elif score < 50: return 20000
             else: return 30000
-
         merged["보상금"] = merged["피해점수"].apply(calc_payout)
 
         # ✅ 가입자 수 입력 및 총 보상금
@@ -297,7 +336,7 @@ with tab3:
         merged["예상총보상금"] = merged["보상금"] * subs_count
         st.success(f"💰 예상 보상금액: {int(merged['예상총보상금'].values[0]):,}원")
 
-        # ✅ 결과 출력
+        # ✅ 결과 테이블 출력
         show_cols = ["자치구", "피해점수", "위험등급", "보상금", "가입자수", "예상총보상금"]
         st.dataframe(merged[show_cols], use_container_width=True)
 
