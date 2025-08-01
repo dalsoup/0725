@@ -274,74 +274,65 @@ with tab3:
         ml_data = pd.read_csv("ML_asos_dataset.csv", encoding="utf-8-sig")
         static_data = pd.read_csv("seoul_static_data.csv", encoding="utf-8-sig")
 
-        # ✅ 자치구 병합 및 필터링
+        # ✅ 자치구 병합 및 날짜 필터링
         merged = pd.merge(static_data, ml_data, on="자치구", how="left")
         merged = merged[merged["일자"] == ymd].copy()
 
         if merged.empty:
-            st.warning("❗️선택한 날짜의 정적 데이터가 없습니다.")
+            st.warning("❗️선택한 날짜의 데이터가 없습니다.")
             st.stop()
 
+        # ✅ 자치구 선택
         selected_gu = st.selectbox("🏘️ 자치구 선택", sorted(merged["자치구"].unique()))
         merged = merged[merged["자치구"] == selected_gu].copy()
 
-        # ✅ 서울시 전체 예측값 불러오기
+        # ✅ 서울시 예측값 불러오기
         try:
             df_total = pd.read_csv("ML_asos_total_prediction.csv", encoding="utf-8-sig")
             pred_row = df_total[df_total["일자"] == ymd]
             if not pred_row.empty:
                 seoul_pred = float(pred_row["서울시예측환자수"].values[0])
             else:
-                st.warning("❗️선택한 날짜의 예측환자수가 없습니다.")
+                st.warning(f"⚠️ {ymd} 예측값이 없습니다.")
                 seoul_pred = 0
-        except:
-            st.error("❌ 서울시 예측값 파일을 불러오는 데 실패했습니다.")
+        except FileNotFoundError:
+            st.warning("⚠️ 예측값 파일이 없습니다. 먼저 tab1에서 예측해주세요.")
             seoul_pred = 0
 
-        # ✅ 예측환자수 자치구별로 일괄 적용
+        # ✅ 예측환자수 복사
         merged["예측환자수"] = seoul_pred
 
-        # ✅ 사회적 취약성 지수 S 계산
-        merged["S"] = 0.5 * merged["고령자비율"].fillna(0) + \
-                      0.3 * merged["야외근로자비율"].fillna(0) + \
-                      0.2 * merged["열쾌적취약인구비율"].fillna(0)
+        # ✅ S 계산
+        merged["S"] = (
+            0.5 * merged["고령자비율"].fillna(0) +
+            0.3 * merged["야외근로자비율"].fillna(0) +
+            0.2 * merged["열쾌적취약인구비율"].fillna(0)
+        )
 
-        # ✅ 환경적 취약성 지수 E 계산 (표준화 포함)
+        # ✅ E 계산 (표준화)
         for col in ["열섬지수", "녹지율", "냉방보급률"]:
             std_col = (merged[col] - merged[col].min()) / (merged[col].max() - merged[col].min())
             merged[f"{col}_std"] = std_col.fillna(0)
 
-        merged["E"] = 0.5 * merged["열섬지수_std"] + \
-                      0.3 * (1 - merged["녹지율_std"]) + \
-                      0.2 * (1 - merged["냉방보급률_std"])
+        merged["E"] = (
+            0.5 * merged["열섬지수_std"] +
+            0.3 * (1 - merged["녹지율_std"]) +
+            0.2 * (1 - merged["냉방보급률_std"])
+        )
 
-        # ✅ 예측/실제 환자수 비율
+        # ✅ 환자수 비율
         merged["예측환자수비율"] = merged["예측환자수"] / seoul_pred if seoul_pred != 0 else 0
         merged["실제환자수비율"] = merged["환자수"] / ml_data["환자수"].max()
 
-        # ✅ 피해점수 계산
+        # ✅ 피해점수
         merged["피해점수"] = 10 * (
             0.4 * merged["S"] +
             0.3 * merged["E"] +
             0.2 * merged["예측환자수비율"] +
             0.1 * merged["실제환자수비율"]
         )
-	
-		📊 피해점수 계산식  
-		피해점수 = 10 × (0.4 × S + 0.3 × E + 0.2 × 예측환자수비율 + 0.1 × 실제환자수비율)
 
-		🔍 계산에 사용된 값
-		- S (사회적 취약성 지수): 0.1584  
-		- E (환경적 취약성 지수): 0.2333  
-		- 예측환자수비율: 0.1349  
-		- 실제환자수비율: 0.0625
-
-		✅ 결과  
-		피해점수 = 10 × (0.4×0.1584 + 0.3×0.2333 + 0.2×0.1349 + 0.1×0.0625)  
-		피해점수 = 4.0448
-
-
-        # ✅ 위험등급 계산
+        # ✅ 위험등급 함수
         def score_to_grade(s):
             if s < 20: return "🟢 매우 낮음"
             elif s < 30: return "🟡 낮음"
@@ -350,7 +341,7 @@ with tab3:
             else: return "🔥 매우 높음"
         merged["위험등급"] = merged["피해점수"].apply(score_to_grade)
 
-        # ✅ 보상금 계산
+        # ✅ 보상금 함수
         def calc_payout(score):
             if score < 20: return 0
             elif score < 30: return 5000
@@ -359,16 +350,52 @@ with tab3:
             else: return 30000
         merged["보상금"] = merged["피해점수"].apply(calc_payout)
 
-        # ✅ 가입자 수 입력 및 총 보상금
+        # ✅ 가입자 수 입력
         st.markdown("### 🧾 가입자 수 입력")
         subs_count = st.number_input(f"{selected_gu} 가입자 수", min_value=0, step=1, key="subs_tab3")
         merged["가입자수"] = subs_count
         merged["예상총보상금"] = merged["보상금"] * subs_count
         st.success(f"💰 예상 보상금액: {int(merged['예상총보상금'].values[0]):,}원")
 
-        # ✅ 결과 테이블 출력
+        # ✅ 결과 테이블
         show_cols = ["자치구", "피해점수", "위험등급", "보상금", "가입자수", "예상총보상금"]
         st.dataframe(merged[show_cols], use_container_width=True)
+
+        # ✅ 피해점수 계산 디버깅
+        with st.expander("🔎 피해점수 계산 상세 보기"):
+            s_val = float(merged["S"].values[0])
+            e_val = float(merged["E"].values[0])
+            pred_ratio = float(merged["예측환자수비율"].values[0])
+            real_ratio = float(merged["실제환자수비율"].values[0])
+            score = float(merged["피해점수"].values[0])
+
+            st.markdown("### 🧬 S / E 구성요소")
+            st.markdown(f"""
+- **S 구성 (사회적 취약성 지수)**  
+  - 🧓 고령자비율: `{merged['고령자비율'].values[0]:.4f}`  
+  - 🛠️ 야외근로자비율: `{merged['야외근로자비율'].values[0]:.4f}`  
+  - 🌡️ 열쾌적취약인구비율: `{merged['열쾌적취약인구비율'].values[0]:.4f}`  
+
+- **E 구성 (환경적 취약성 지수)**  
+  - 🔥 열섬지수 표준화: `{merged['열섬지수_std'].values[0]:.4f}`  
+  - 🌳 녹지율 표준화: `{merged['녹지율_std'].values[0]:.4f}`  
+  - ❄️ 냉방보급률 표준화: `{merged['냉방보급률_std'].values[0]:.4f}`
+            """)
+
+            st.markdown("### 📊 피해점수 계산식")
+            st.markdown(f"""
+피해점수 = 10 × (0.4 × S + 0.3 × E + 0.2 × 예측환자수비율 + 0.1 × 실제환자수비율)
+
+🧾 **계산에 사용된 값**  
+- 🟦 S: `{s_val:.4f}`  
+- 🟩 E: `{e_val:.4f}`  
+- 🔵 예측환자수비율: `{pred_ratio:.4f}`  
+- 🟣 실제환자수비율: `{real_ratio:.4f}`
+
+✅ **결과**  
+피해점수 = 10 × (0.4×{s_val:.4f} + 0.3×{e_val:.4f} + 0.2×{pred_ratio:.4f} + 0.1×{real_ratio:.4f})  
+피해점수 = `{score:.4f}`
+            """)
 
         # ✅ CSV 다운로드
         csv_download = merged[show_cols]
@@ -382,3 +409,4 @@ with tab3:
 
     except Exception as e:
         st.error(f"❌ 분석 실패: {e}")
+
