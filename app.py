@@ -280,8 +280,12 @@ with tab3:
             st.warning("❗️선택한 날짜의 데이터가 없습니다.")
             st.stop()
 
-        # 서울시 전체 예측환자수 불러오기
-        df_total = pd.read_csv("ML_asos_total_prediction.csv", encoding="utf-8-sig")
+        # 서울시 전체 예측환자수 불러오기 (CSV with fallback encoding)
+        try:
+            df_total = pd.read_csv("ML_asos_total_prediction.csv", encoding="utf-8-sig")
+        except UnicodeDecodeError:
+            df_total = pd.read_csv("ML_asos_total_prediction.csv", encoding="cp949")
+
         pred_row = df_total[df_total["일자"] == ymd]
         if not pred_row.empty:
             seoul_pred = float(pred_row["서울시예측환자수"].values[0])
@@ -392,7 +396,7 @@ with tab3:
 피해점수 = `{score:.4f}`
             """)
 
-        # 다운로드
+        # 다운로드 (CSV)
         csv_download = merged[show_cols]
         csv_bytes = csv_download.to_csv(index=False).encode("utf-8-sig")
         st.download_button(
