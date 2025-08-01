@@ -301,7 +301,6 @@ with tab3:
         merged_all["예측환자수"] = seoul_pred * (merged_all["전체인구"] / total_population)
         merged_all["예측환자수비율"] = merged_all["예측환자수"] / seoul_pred
 
-        # ✅ S 계산을 merged_all에서 바로!
         merged_all["S"] = (
             0.5 * merged_all["고령자비율"].fillna(0) +
             0.3 * merged_all["야외근로자비율"].fillna(0) +
@@ -314,7 +313,6 @@ with tab3:
             range_val = max_val - min_val if max_val != min_val else 1
             merged_all[f"{col}_std"] = (merged_all[col] - min_val) / range_val
 
-        # ✅ E도 merged_all에서 계산
         merged_all["E"] = (
             0.5 * merged_all["열섬지수_std"] +
             0.3 * (1 - merged_all["녹지율_std"]) +
@@ -322,11 +320,13 @@ with tab3:
         )
 
         merged_all["실제환자수비율"] = merged_all["환자수"].fillna(0) / ml_data["환자수"].max()
+
+        # ✅ 개선된 피해점수 산식
         merged_all["피해점수"] = 10 * (
-            0.4 * merged_all["S"] +
+            0.4 * (merged_all["S"] * 1.5) +
             0.3 * merged_all["E"] +
-            0.2 * merged_all["예측환자수비율"] +
-            0.1 * merged_all["실제환자수비율"]
+            0.2 * (merged_all["예측환자수비율"] ** 0.5) +
+            0.1 * (merged_all["실제환자수비율"] ** 0.5)
         )
 
         def score_to_grade(s):
@@ -372,7 +372,7 @@ with tab3:
 - 고령자비율              = {merged['고령자비율'].values[0]:.4f}
 - 야외근로자비율          = {merged['야외근로자비율'].values[0]:.4f}
 - 열쾌적취약인구비율      = {merged['열쾌적취약인구비율'].values[0]:.4f}
-=> S = {s_val:.4f}
+=> S = {s_val:.4f} × 1.5 = {s_val * 1.5:.4f}
 
 [E 계산]
 - 열섬지수 (표준화)       = {merged['열섬지수_std'].values[0]:.4f}
@@ -381,11 +381,11 @@ with tab3:
 => E = {e_val:.4f}
 
 [환자 수 비율]
-- 예측환자수비율          = {pred_ratio:.4f}
-- 실제환자수비율          = {real_ratio:.4f}
+- 예측환자수비율          = {pred_ratio:.4f} → √ = {pred_ratio**0.5:.4f}
+- 실제환자수비율          = {real_ratio:.4f} → √ = {real_ratio**0.5:.4f}
 
 [최종 피해점수 계산]
-피해점수 = 10 × (0.4×{s_val:.4f} + 0.3×{e_val:.4f} + 0.2×{pred_ratio:.4f} + 0.1×{real_ratio:.4f})
+피해점수 = 10 × (0.4×{s_val * 1.5:.4f} + 0.3×{e_val:.4f} + 0.2×{pred_ratio**0.5:.4f} + 0.1×{real_ratio**0.5:.4f})  
          = {score:.4f}
 --------------------------------------------------
 """
@@ -398,7 +398,7 @@ with tab3:
                 mime="text/plain"
             )
 
-        # ✅ 전체 자치구 디버깅 로그
+        # ✅ 전체 자치구 디버깅 로그 일괄 다운로드
         all_debug_logs = ""
         for _, row in merged_all.iterrows():
             s = row["S"]
@@ -413,7 +413,7 @@ with tab3:
 - 고령자비율              = {row['고령자비율']:.4f}
 - 야외근로자비율          = {row['야외근로자비율']:.4f}
 - 열쾌적취약인구비율      = {row['열쾌적취약인구비율']:.4f}
-=> S = {s:.4f}
+=> S = {s:.4f} × 1.5 = {s * 1.5:.4f}
 
 [E 계산]
 - 열섬지수 (표준화)       = {row['열섬지수_std']:.4f}
@@ -422,11 +422,11 @@ with tab3:
 => E = {e:.4f}
 
 [환자 수 비율]
-- 예측환자수비율          = {pred_ratio:.4f}
-- 실제환자수비율          = {real_ratio:.4f}
+- 예측환자수비율          = {pred_ratio:.4f} → √ = {pred_ratio**0.5:.4f}
+- 실제환자수비율          = {real_ratio:.4f} → √ = {real_ratio**0.5:.4f}
 
 [최종 피해점수 계산]
-피해점수 = 10 × (0.4×{s:.4f} + 0.3×{e:.4f} + 0.2×{pred_ratio:.4f} + 0.1×{real_ratio:.4f})
+피해점수 = 10 × (0.4×{s * 1.5:.4f} + 0.3×{e:.4f} + 0.2×{pred_ratio**0.5:.4f} + 0.1×{real_ratio**0.5:.4f})  
          = {score:.4f}
 --------------------------------------------------
 """
@@ -438,6 +438,26 @@ with tab3:
             file_name=f"전체_피해점수_디버깅_{ymd}.txt",
             mime="text/plain"
         )
+
+        with st.expander("📘 피해점수 구성 요소 안내"):
+            st.markdown("""
+            > 🧓 **S (사회적 취약성 지수)**  
+            고령자, 야외 근로자, 열에 취약한 인구의 비율을 반영한 지수입니다.
+
+            > 🌍 **E (환경적 취약성 지수)**  
+            열섬 현상, 녹지율, 냉방 보급률 등을 표준화하여 반영한 지수입니다.
+
+            > 📈 **예측환자수비율**  
+            전체 예측 환자 수를 자치구 인구 비율로 나눈 값입니다.  
+            (이 값에 제곱근이 적용되어 피해점수에 반영됩니다.)
+
+            > 📉 **실제환자수비율**  
+            실제 발생한 환자 수를 서울 전체 중 비율로 나타낸 값입니다.  
+            (이 값에도 제곱근이 적용되어 반영됩니다.)
+
+            > 🧮 **피해점수 계산식**  
+            피해점수 = 10 × (0.4 × (S×1.5) + 0.3 × E + 0.2 × √예측비율 + 0.1 × √실제비율)
+            """)
 
     except Exception as e:
         st.error(f"❌ 분석 실패: {e}")
