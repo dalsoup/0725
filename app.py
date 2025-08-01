@@ -228,101 +228,98 @@ with tab1:
 # 📥 AI 학습 데이터 추가
 # ====================================================================
 with tab2:
-    with st.expander("ℹ️ 학습 데이터 기록 안내"):
+    with st.expander("ℹ️ tab2 사용법"):
         st.markdown("""
-        **~25년 7월 24일까지**의 기상 정보와 온열질환자 수 데이터는 이미 HeatAI에 반영되어 있습니다.  
-        **2025년 7월 25일 이후**의 데이터를 추가로 학습시켜 모델을 최신 상태로 유지할 수 있습니다.
-
-        **✅ 사용 방법**
-        1. 2025년 7월 25일 이후 날짜를 선택해주세요.  
-        2. 아래 링크에서 질병청의 온열질환자 엑셀 파일을 다운로드하세요:  
-           👉 [온열질환 응급실감시체계 다운로드](https://www.kdca.go.kr/board/board.es?mid=a20205030102&bid=0004&&cg_code=C01)
-        3. 파일을 업로드하면, 해당 날짜의 **기상청 ASOS 관측 데이터와 함께 AI가 자동 학습**합니다.
-
-        📈 업로드된 데이터는 오늘 이후의 폭염 위험도 예측 정확도 향상에 활용됩니다.
+        **✅ 사용 방법**  
+        1. 날짜와 자치구를 선택하세요.  
+        2. 아래 링크에서 질병청의 온열질환자 엑셀 파일을 다운로드해 업로드하세요.  
+           👉 [온열질환 응급실감시체계 다운로드](https://www.kdca.go.kr/board/board.es?mid=a20205030102&bid=0004&&cg_code=C01)  
+        3. **저장하기** 버튼을 누르면, 해당 데이터는 tab3의 자치구별 피해점수 산정을 위한 입력값으로 자동 반영됩니다.
         """)
 
-    st.header("📥 AI 학습 데이터 추가")
-    # 📅 날짜 제한: 2021년 5월 1일 ~ 어제
-    today = datetime.date.today()
-    min_record_date = datetime.date(2021, 5, 1)
-    max_record_date = today - datetime.timedelta(days=1)
+    st.header("📥 자치구별 실제 폭염 데이터 저장하기")
 
-    with st.form(key="upload_form"):
-        uploaded_file = st.file_uploader("엑셀 파일 (시트명은 지역명)", type=["xlsx"])
-        region = st.selectbox("지역 선택 (시트명과 동일)", list(region_to_stn_id.keys()), key="region_excel")
-        date_selected = st.date_input(
-            "기록할 날짜",
-            value=max_record_date,
-            min_value=min_record_date,
-            max_value=max_record_date,
-            key="record_date"
-        )
-        submit_button = st.form_submit_button("📅 저장하기")
+# ✅ 1. 날짜, 광역시도, 자치구 선택
+today = datetime.date.today()
+min_record_date = datetime.date(2021, 5, 1)
+max_record_date = today - datetime.timedelta(days=1)
 
-    if uploaded_file and submit_button:
-        try:
-            df_raw = pd.read_excel(uploaded_file, sheet_name=region, header=None, engine="openpyxl")
-            ymd = date_selected.strftime("%Y-%m-%d")
+date_selected = st.date_input("📅 기록할 날짜", value=max_record_date, min_value=min_record_date, max_value=max_record_date)
+region = st.selectbox("🌐 광역시도 선택", ["서울특별시"], key="region_excel")
+gu = st.selectbox("🏘️ 자치구 선택", [
+    '종로구', '중구', '용산구', '성동구', '광진구', '동대문구', '중랑구', '성북구', '강북구', '도봉구',
+    '노원구', '은평구', '서대문구', '마포구', '양천구', '강서구', '구로구', '금천구', '영등포구',
+    '동작구', '관악구', '서초구', '강남구', '송파구', '강동구'
+])
 
-            if "합계" in df_raw.iloc[0].astype(str).tolist():
-                df_raw.columns = df_raw.iloc[1]
-                df = df_raw[2:].reset_index(drop=True)
-                df.rename(columns={df.columns[0]: "일자"}, inplace=True)
-                df["일자"] = pd.to_datetime(df["일자"], errors="coerce").dt.strftime("%Y-%m-%d")
-                df_day = df[df["일자"] == ymd]
-                if df_day.empty:
-                    st.warning("📭 선택한 날짜에 해당하는 환자 수 정보가 없습니다.")
-                    st.stop()
-                환자수 = pd.to_numeric(df_day.drop(columns=["일자"]).values.flatten(), errors="coerce").sum()
+# ✅ 2. 질병청 엑셀 파일 업로드
+uploaded_file = st.file_uploader("📎 질병청 환자수 파일 업로드 (.xlsx, 시트명: 서울특별시)", type=["xlsx"])
 
-            else:
-                df_raw.columns = df_raw.iloc[2]
-                df = df_raw[3:].reset_index(drop=True)
-                df.columns = df.columns.map(lambda x: str(x).strip().replace("\n", "").replace(" ", ""))
-                일자_col = next(col for col in df.columns if "일자" in col)
-                환자수_col = next((col for col in df.columns if "합계" in str(df[col].iloc[0])), None)
-                if 환자수_col is None:
-                    st.error("❌ '합계' 값이 있는 열을 찾을 수 없습니다.")
-                    st.stop()
-                df[일자_col] = pd.to_datetime(df[일자_col], errors='coerce').dt.strftime("%Y-%m-%d")
-                df = df[[일자_col, 환자수_col]]
-                df.columns = ["일자", "환자수"]
-                df["환자수"] = pd.to_numeric(df["환자수"], errors="coerce")
-                df = df[df["일자"] == ymd]
-                if df.empty:
-                    st.warning("📭 선택한 날짜에 해당하는 환자 수 정보가 없습니다.")
-                    st.stop()
-                환자수 = int(df["환자수"].iloc[0])
+    if uploaded_file:
+    try:
+        df_raw = pd.read_excel(uploaded_file, sheet_name="서울특별시", header=None)
+        districts = df_raw.iloc[0, 1::2].tolist()
+        dates = df_raw.iloc[3:, 0].tolist()
+        df_values = df_raw.iloc[3:, 1::2]
+        df_values.columns = districts
+        df_values.insert(0, "일자", dates)
+        df_long = df_values.melt(id_vars=["일자"], var_name="자치구", value_name="환자수")
+        df_long["일자"] = pd.to_datetime(df_long["일자"], errors="coerce").dt.strftime("%Y-%m-%d")
+        df_long["환자수"] = pd.to_numeric(df_long["환자수"], errors="coerce").fillna(0).astype(int)
+        df_long["지역"] = "서울특별시"
 
-            weather = get_asos_weather(region, date_selected.strftime("%Y%m%d"))
-            tmx = weather.get("TMX", 0)
-            tmn = weather.get("TMN", 0)
-            reh = weather.get("REH", 0)
-            avg_temp = round((tmx + tmn) / 2, 1)
+        # ✅ 3. 선택된 날짜+자치구의 환자수 확인
+        ymd = date_selected.strftime("%Y-%m-%d")
+        selected = df_long[(df_long["일자"] == ymd) & (df_long["자치구"] == gu)]
+        if selected.empty:
+            st.warning(f"❌ {ymd} {gu} 환자수 데이터가 없습니다.")
+            st.stop()
+        환자수 = int(selected["환자수"].values[0])
 
-            input_row = {
+        # ✅ 4. 기상청 ASOS API로 실제 기온 데이터 가져오기
+        from app import get_asos_weather  # 기존 함수 재활용
+        weather = get_asos_weather(region, ymd.replace("-", ""))
+        tmx = weather.get("TMX", 0)
+        tmn = weather.get("TMN", 0)
+        reh = weather.get("REH", 0)
+        avg_temp = round((tmx + tmn) / 2, 1)
+
+        # ✅ 5. 통합 표 표시
+        st.markdown("### ✅ 저장될 학습 데이터")
+            preview_df = pd.DataFrame([{ 
                 "일자": ymd,
                 "지역": region,
+                "자치구": gu,
                 "최고체감온도(°C)": tmx + 1.5,
                 "최고기온(°C)": tmx,
                 "평균기온(°C)": avg_temp,
                 "최저기온(°C)": tmn,
                 "평균상대습도(%)": reh,
                 "환자수": 환자수
-            }
+            }])
 
-            csv_path = GITHUB_FILENAME
+        # ✅ 6. GitHub 저장 버튼
+        if st.button("💾 GitHub에 저장하기"):
+            csv_path = "ML_asos_dataset.csv"
             if os.path.exists(csv_path):
                 try:
                     existing = pd.read_csv(csv_path, encoding="utf-8-sig")
                 except UnicodeDecodeError:
                     existing = pd.read_csv(csv_path, encoding="cp949")
-                existing = existing[~((existing["일자"] == ymd) & (existing["지역"] == region))]
-                df_all = pd.concat([existing, pd.DataFrame([input_row])], ignore_index=True)
+                existing = existing[~((existing["일자"] == ymd) & (existing["자치구"] == gu))]
+                df_all = pd.concat([existing, preview_df], ignore_index=True)
             else:
-                df_all = pd.DataFrame([input_row])
+                df_all = preview_df
+
             df_all.to_csv(csv_path, index=False, encoding="utf-8-sig")
+
+            # ✅ GitHub API 업로드
+            from urllib.parse import unquote
+            GITHUB_USERNAME = st.secrets["GITHUB"]["USERNAME"]
+            GITHUB_REPO = st.secrets["GITHUB"]["REPO"]
+            GITHUB_BRANCH = st.secrets["GITHUB"]["BRANCH"]
+            GITHUB_TOKEN = st.secrets["GITHUB"]["TOKEN"]
+            GITHUB_FILENAME = "ML_asos_dataset.csv"
 
             with open(csv_path, "rb") as f:
                 content = f.read()
@@ -331,13 +328,15 @@ with tab2:
             api_url = f"https://api.github.com/repos/{GITHUB_USERNAME}/{GITHUB_REPO}/contents/{GITHUB_FILENAME}"
             r = requests.get(api_url, headers={"Authorization": f"Bearer {GITHUB_TOKEN}"})
             sha = r.json().get("sha") if r.status_code == 200 else None
+
             payload = {
-                "message": f"Update {GITHUB_FILENAME} with new data for {ymd} {region}",
+                "message": f"Update {GITHUB_FILENAME} with new data for {ymd} {region} {gu}",
                 "content": b64_content,
                 "branch": GITHUB_BRANCH
             }
             if sha:
                 payload["sha"] = sha
+
             headers = {
                 "Authorization": f"Bearer {GITHUB_TOKEN}",
                 "Accept": "application/vnd.github+json"
@@ -349,5 +348,6 @@ with tab2:
             else:
                 st.warning(f"⚠️ GitHub 저장 실패: {r.status_code} {r.text[:200]}")
 
-        except Exception as e:
-            st.error(f"❌ 처리 중 오류 발생: {e}")
+    except Exception as e:
+        st.error(f"❌ 처리 중 오류 발생: {e}")
+
