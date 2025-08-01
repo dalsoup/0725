@@ -163,7 +163,8 @@ with tab2:
             st.dataframe(preview_df)
 
             if st.button("💾 GitHub에 저장하기", key="save_tab2"):
-                csv_path = "ML_asos_dataset.csv"
+                csv_path = "ML_asos_dataset_by_gu.csv"
+
                 if os.path.exists(csv_path):
                     try:
                         existing = pd.read_csv(csv_path, encoding="utf-8-sig")
