@@ -239,53 +239,53 @@ with tab2:
 
     st.header("📥 자치구별 실제 폭염 데이터 저장하기")
 
-# ✅ 1. 날짜, 광역시도, 자치구 선택
-today = datetime.date.today()
-min_record_date = datetime.date(2021, 5, 1)
-max_record_date = today - datetime.timedelta(days=1)
+    # ✅ 1. 날짜, 광역시도, 자치구 선택
+    today = datetime.date.today()
+    min_record_date = datetime.date(2021, 5, 1)
+    max_record_date = today - datetime.timedelta(days=1)
 
-date_selected = st.date_input("📅 기록할 날짜", value=max_record_date, min_value=min_record_date, max_value=max_record_date)
-region = st.selectbox("🌐 광역시도 선택", ["서울특별시"], key="region_excel")
-gu = st.selectbox("🏘️ 자치구 선택", [
-    '종로구', '중구', '용산구', '성동구', '광진구', '동대문구', '중랑구', '성북구', '강북구', '도봉구',
-    '노원구', '은평구', '서대문구', '마포구', '양천구', '강서구', '구로구', '금천구', '영등포구',
-    '동작구', '관악구', '서초구', '강남구', '송파구', '강동구'
-])
+    date_selected = st.date_input("📅 기록할 날짜", value=max_record_date, min_value=min_record_date, max_value=max_record_date)
+    region = st.selectbox("🌐 광역시도 선택", ["서울특별시"], key="region_excel")
+    gu = st.selectbox("🏘️ 자치구 선택", [
+        '종로구', '중구', '용산구', '성동구', '광진구', '동대문구', '중랑구', '성북구', '강북구', '도봉구',
+        '노원구', '은평구', '서대문구', '마포구', '양천구', '강서구', '구로구', '금천구', '영등포구',
+        '동작구', '관악구', '서초구', '강남구', '송파구', '강동구'
+    ])
 
-# ✅ 2. 질병청 엑셀 파일 업로드
-uploaded_file = st.file_uploader("📎 질병청 환자수 파일 업로드 (.xlsx, 시트명: 서울특별시)", type=["xlsx"])
+    # ✅ 2. 질병청 엑셀 파일 업로드
+    uploaded_file = st.file_uploader("📎 질병청 환자수 파일 업로드 (.xlsx, 시트명: 서울특별시)", type=["xlsx"])
 
-if uploaded_file:
-    try:
-        df_raw = pd.read_excel(uploaded_file, sheet_name="서울특별시", header=None)
-        districts = df_raw.iloc[0, 1::2].tolist()
-        dates = df_raw.iloc[3:, 0].tolist()
-        df_values = df_raw.iloc[3:, 1::2]
-        df_values.columns = districts
-        df_values.insert(0, "일자", dates)
-        df_long = df_values.melt(id_vars=["일자"], var_name="자치구", value_name="환자수")
-        df_long["일자"] = pd.to_datetime(df_long["일자"], errors="coerce").dt.strftime("%Y-%m-%d")
-        df_long["환자수"] = pd.to_numeric(df_long["환자수"], errors="coerce").fillna(0).astype(int)
-        df_long["지역"] = "서울특별시"
+    if uploaded_file:
+        try:
+            df_raw = pd.read_excel(uploaded_file, sheet_name="서울특별시", header=None)
+            districts = df_raw.iloc[0, 1::2].tolist()
+            dates = df_raw.iloc[3:, 0].tolist()
+            df_values = df_raw.iloc[3:, 1::2]
+            df_values.columns = districts
+            df_values.insert(0, "일자", dates)
+            df_long = df_values.melt(id_vars=["일자"], var_name="자치구", value_name="환자수")
+            df_long["일자"] = pd.to_datetime(df_long["일자"], errors="coerce").dt.strftime("%Y-%m-%d")
+            df_long["환자수"] = pd.to_numeric(df_long["환자수"], errors="coerce").fillna(0).astype(int)
+            df_long["지역"] = "서울특별시"
 
-        # ✅ 3. 선택된 날짜+자치구의 환자수 확인
-        ymd = date_selected.strftime("%Y-%m-%d")
-        selected = df_long[(df_long["일자"] == ymd) & (df_long["자치구"] == gu)]
-        if selected.empty:
-            st.warning(f"❌ {ymd} {gu} 환자수 데이터가 없습니다.")
-            st.stop()
-        환자수 = int(selected["환자수"].values[0])
+            # ✅ 3. 선택된 날짜+자치구의 환자수 확인
+            ymd = date_selected.strftime("%Y-%m-%d")
+            selected = df_long[(df_long["일자"] == ymd) & (df_long["자치구"] == gu)]
+            if selected.empty:
+                st.warning(f"❌ {ymd} {gu} 환자수 데이터가 없습니다.")
+                st.stop()
+            환자수 = int(selected["환자수"].values[0])
 
-        # ✅ 4. 기상청 ASOS API로 실제 기온 데이터 가져오기
-        from app import get_asos_weather  # 기존 함수 재활용
-        weather = get_asos_weather(region, ymd.replace("-", ""))
-        tmx = weather.get("TMX", 0)
-        tmn = weather.get("TMN", 0)
-        reh = weather.get("REH", 0)
-        avg_temp = round((tmx + tmn) / 2, 1)
+            # ✅ 4. 기상청 ASOS API로 실제 기온 데이터 가져오기
+            from app import get_asos_weather
+            weather = get_asos_weather(region, ymd.replace("-", ""))
+            tmx = weather.get("TMX", 0)
+            tmn = weather.get("TMN", 0)
+            reh = weather.get("REH", 0)
+            avg_temp = round((tmx + tmn) / 2, 1)
 
-        # ✅ 5. 통합 표 표시
-        st.markdown("### ✅ 저장될 학습 데이터")
+            # ✅ 5. 통합 표 표시
+            st.markdown("### ✅ 저장될 학습 데이터")
             preview_df = pd.DataFrame([{ 
                 "일자": ymd,
                 "지역": region,
@@ -297,57 +297,58 @@ if uploaded_file:
                 "평균상대습도(%)": reh,
                 "환자수": 환자수
             }])
+            st.dataframe(preview_df)
 
-        # ✅ 6. GitHub 저장 버튼
-        if st.button("💾 GitHub에 저장하기"):
-            csv_path = "ML_asos_dataset.csv"
-            if os.path.exists(csv_path):
-                try:
-                    existing = pd.read_csv(csv_path, encoding="utf-8-sig")
-                except UnicodeDecodeError:
-                    existing = pd.read_csv(csv_path, encoding="cp949")
-                existing = existing[~((existing["일자"] == ymd) & (existing["자치구"] == gu))]
-                df_all = pd.concat([existing, preview_df], ignore_index=True)
-            else:
-                df_all = preview_df
+            # ✅ 6. GitHub 저장 버튼
+            if st.button("💾 GitHub에 저장하기"):
+                csv_path = "ML_asos_dataset.csv"
+                if os.path.exists(csv_path):
+                    try:
+                        existing = pd.read_csv(csv_path, encoding="utf-8-sig")
+                    except UnicodeDecodeError:
+                        existing = pd.read_csv(csv_path, encoding="cp949")
+                    existing = existing[~((existing["일자"] == ymd) & (existing["자치구"] == gu))]
+                    df_all = pd.concat([existing, preview_df], ignore_index=True)
+                else:
+                    df_all = preview_df
 
-            df_all.to_csv(csv_path, index=False, encoding="utf-8-sig")
+                df_all.to_csv(csv_path, index=False, encoding="utf-8-sig")
 
-            # ✅ GitHub API 업로드
-            from urllib.parse import unquote
-            GITHUB_USERNAME = st.secrets["GITHUB"]["USERNAME"]
-            GITHUB_REPO = st.secrets["GITHUB"]["REPO"]
-            GITHUB_BRANCH = st.secrets["GITHUB"]["BRANCH"]
-            GITHUB_TOKEN = st.secrets["GITHUB"]["TOKEN"]
-            GITHUB_FILENAME = "ML_asos_dataset.csv"
+                # ✅ GitHub API 업로드
+                from urllib.parse import unquote
+                GITHUB_USERNAME = st.secrets["GITHUB"]["USERNAME"]
+                GITHUB_REPO = st.secrets["GITHUB"]["REPO"]
+                GITHUB_BRANCH = st.secrets["GITHUB"]["BRANCH"]
+                GITHUB_TOKEN = st.secrets["GITHUB"]["TOKEN"]
+                GITHUB_FILENAME = "ML_asos_dataset.csv"
 
-            with open(csv_path, "rb") as f:
-                content = f.read()
-            b64_content = base64.b64encode(content).decode("utf-8")
+                with open(csv_path, "rb") as f:
+                    content = f.read()
+                b64_content = base64.b64encode(content).decode("utf-8")
 
-            api_url = f"https://api.github.com/repos/{GITHUB_USERNAME}/{GITHUB_REPO}/contents/{GITHUB_FILENAME}"
-            r = requests.get(api_url, headers={"Authorization": f"Bearer {GITHUB_TOKEN}"})
-            sha = r.json().get("sha") if r.status_code == 200 else None
+                api_url = f"https://api.github.com/repos/{GITHUB_USERNAME}/{GITHUB_REPO}/contents/{GITHUB_FILENAME}"
+                r = requests.get(api_url, headers={"Authorization": f"Bearer {GITHUB_TOKEN}"})
+                sha = r.json().get("sha") if r.status_code == 200 else None
 
-            payload = {
-                "message": f"Update {GITHUB_FILENAME} with new data for {ymd} {region} {gu}",
-                "content": b64_content,
-                "branch": GITHUB_BRANCH
-            }
-            if sha:
-                payload["sha"] = sha
+                payload = {
+                    "message": f"Update {GITHUB_FILENAME} with new data for {ymd} {region} {gu}",
+                    "content": b64_content,
+                    "branch": GITHUB_BRANCH
+                }
+                if sha:
+                    payload["sha"] = sha
 
-            headers = {
-                "Authorization": f"Bearer {GITHUB_TOKEN}",
-                "Accept": "application/vnd.github+json"
-            }
-            r = requests.put(api_url, headers=headers, json=payload)
-            if r.status_code in [200, 201]:
-                st.success("✅ GitHub 저장 완료")
-                st.info(f"🔗 [파일 바로 확인하기](https://github.com/{GITHUB_USERNAME}/{GITHUB_REPO}/blob/{GITHUB_BRANCH}/{GITHUB_FILENAME})")
-            else:
-                st.warning(f"⚠️ GitHub 저장 실패: {r.status_code} {r.text[:200]}")
+                headers = {
+                    "Authorization": f"Bearer {GITHUB_TOKEN}",
+                    "Accept": "application/vnd.github+json"
+                }
+                r = requests.put(api_url, headers=headers, json=payload)
+                if r.status_code in [200, 201]:
+                    st.success("✅ GitHub 저장 완료")
+                    st.info(f"🔗 [파일 바로 확인하기](https://github.com/{GITHUB_USERNAME}/{GITHUB_REPO}/blob/{GITHUB_BRANCH}/{GITHUB_FILENAME})")
+                else:
+                    st.warning(f"⚠️ GitHub 저장 실패: {r.status_code} {r.text[:200]}")
 
-    except Exception as e:
-        st.error(f"❌ 처리 중 오류 발생: {e}")
+        except Exception as e:
+            st.error(f"❌ 처리 중 오류 발생: {e}")
 
