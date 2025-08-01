@@ -114,15 +114,16 @@ with tab2:
 
     date_selected = st.date_input("📅 기록할 날짜", value=max_record_date, min_value=min_record_date, max_value=max_record_date, key="date_tab2")
     region = st.selectbox("🌐 광역시도 선택", ["서울특별시"], key="region_tab2")
-    gu = st.selectbox("🏘️ 자치구 선택", [
+
+    gus = st.multiselect("🏘️ 자치구 선택", [
         '종로구', '중구', '용산구', '성동구', '광진구', '동대문구', '중랑구', '성북구', '강북구', '도봉구',
         '노원구', '은평구', '서대문구', '마포구', '양천구', '강서구', '구로구', '금천구', '영등포구',
         '동작구', '관악구', '서초구', '강남구', '송파구', '강동구'
-    ], key="gu_tab2")
+    ], default=["중구"], key="gu_tab2_multi")
 
     uploaded_file = st.file_uploader("📎 질병청 환자수 파일 업로드 (.xlsx, 시트명: 서울특별시)", type=["xlsx"], key="upload_tab2")
 
-    if uploaded_file:
+    if uploaded_file and gus:
         try:
             df_raw = pd.read_excel(uploaded_file, sheet_name="서울특별시", header=None)
             districts = df_raw.iloc[0, 1::2].tolist()
@@ -136,41 +137,49 @@ with tab2:
             df_long["지역"] = "서울특별시"
 
             ymd = date_selected.strftime("%Y-%m-%d")
-            selected = df_long[(df_long["일자"] == ymd) & (df_long["자치구"] == gu)]
-            if selected.empty:
-                st.warning(f"❌ {ymd} {gu} 환자수 데이터가 없습니다.")
-                st.stop()
-            환자수 = int(selected["환자수"].values[0])
-
             weather = get_asos_weather(region, ymd.replace("-", ""), ASOS_API_KEY)
             tmx = weather.get("TMX", 0)
             tmn = weather.get("TMN", 0)
             reh = weather.get("REH", 0)
             avg_temp = calculate_avg_temp(tmx, tmn)
 
-            st.markdown("### ✅ 저장될 학습 데이터")
-            preview_df = pd.DataFrame([{ 
-                "일자": ymd,
-                "지역": region,
-                "자치구": gu,
-                "최고체감온도(°C)": tmx + 1.5,
-                "최고기온(°C)": tmx,
-                "평균기온(°C)": avg_temp,
-                "최저기온(°C)": tmn,
-                "평균상대습도(%)": reh,
-                "환자수": 환자수
-            }])
+            preview_list = []
+
+            for gu in gus:
+                selected = df_long[(df_long["일자"] == ymd) & (df_long["자치구"] == gu)]
+                if selected.empty:
+                    st.warning(f"❌ {ymd} {gu} 환자수 데이터가 없습니다.")
+                    continue
+
+                환자수 = int(selected["환자수"].values[0])
+                preview_list.append({
+                    "일자": ymd,
+                    "지역": region,
+                    "자치구": gu,
+                    "최고체감온도(°C)": tmx + 1.5,
+                    "최고기온(°C)": tmx,
+                    "평균기온(°C)": avg_temp,
+                    "최저기온(°C)": tmn,
+                    "평균상대습도(%)": reh,
+                    "환자수": 환자수
+                })
+
+            if not preview_list:
+                st.stop()
+
+            preview_df = pd.DataFrame(preview_list)
+            st.markdown("### ✅ 저장될 학습 데이터 미리보기")
             st.dataframe(preview_df)
 
-            if st.button("💾 GitHub에 저장하기", key="save_tab2"):
+            if st.button("💾 GitHub에 저장하기", key="save_tab2_multi"):
                 csv_path = "ML_asos_dataset_by_gu.csv"
-
                 if os.path.exists(csv_path):
                     try:
                         existing = pd.read_csv(csv_path, encoding="utf-8-sig")
                     except UnicodeDecodeError:
                         existing = pd.read_csv(csv_path, encoding="cp949")
-                    existing = existing[~((existing["일자"] == ymd) & (existing["자치구"] == gu))]
+                    for gu in gus:
+                        existing = existing[~((existing["일자"] == ymd) & (existing["자치구"] == gu))]
                     df_all = pd.concat([existing, preview_df], ignore_index=True)
                 else:
                     df_all = preview_df
@@ -186,7 +195,7 @@ with tab2:
                 sha = r.json().get("sha") if r.status_code == 200 else None
 
                 payload = {
-                    "message": f"Update {GITHUB_FILENAME} with new data for {ymd} {region} {gu}",
+                    "message": f"Update {GITHUB_FILENAME} with new data for {ymd} {region} {', '.join(gus)}",
                     "content": b64_content,
                     "branch": GITHUB_BRANCH
                 }
