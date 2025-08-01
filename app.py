@@ -269,9 +269,17 @@ with tab3:
         selected_date = st.date_input("📅 분석 날짜 선택", datetime.date.today())
         ymd = selected_date.strftime("%Y-%m-%d")
 
-        # 데이터 로드
-        ml_data = pd.read_csv("ML_asos_dataset.csv", encoding="utf-8-sig")
-        static_data = pd.read_csv("seoul_static_data.csv", encoding="utf-8-sig")
+        # 데이터 로드 (with encoding fallback)
+        def load_csv_with_fallback(path):
+            for enc in ["utf-8-sig", "cp949", "euc-kr"]:
+                try:
+                    return pd.read_csv(path, encoding=enc)
+                except UnicodeDecodeError:
+                    continue
+            raise UnicodeDecodeError(f"❌ 인코딩 실패: {path}")
+
+        ml_data = load_csv_with_fallback("ML_asos_dataset.csv")
+        static_data = load_csv_with_fallback("seoul_static_data.csv")
 
         merged_all = pd.merge(static_data, ml_data, on="자치구", how="left")
         merged_all = merged_all[merged_all["일자"] == ymd].copy()
@@ -280,7 +288,6 @@ with tab3:
             st.warning("❗️선택한 날짜의 데이터가 없습니다.")
             st.stop()
 
-        # 서울시 전체 예측환자수 불러오기 (CSV with fallback encoding)
         try:
             df_total = pd.read_csv("ML_asos_total_prediction.csv", encoding="utf-8-sig")
         except UnicodeDecodeError:
@@ -297,23 +304,19 @@ with tab3:
             st.warning(f"⚠️ {ymd} 예측값이 없습니다.")
             seoul_pred = 0
 
-        # 전체 인구 기준 자치구별 예측환자수 분배
         total_population = merged_all["전체인구"].sum()
         merged_all["예측환자수"] = seoul_pred * (merged_all["전체인구"] / total_population)
         merged_all["예측환자수비율"] = merged_all["예측환자수"] / seoul_pred
 
-        # 자치구 선택
         selected_gu = st.selectbox("🏘️ 자치구 선택", sorted(merged_all["자치구"].unique()))
         merged = merged_all[merged_all["자치구"] == selected_gu].copy()
 
-        # S 계산
         merged["S"] = (
             0.5 * merged["고령자비율"].fillna(0) +
             0.3 * merged["야외근로자비율"].fillna(0) +
             0.2 * merged["열쾌적취약인구비율"].fillna(0)
         )
 
-        # 전체 자치구 기준 E 구성요소 표준화
         for col in ["열섬지수", "녹지율", "냉방보급률"]:
             min_val = merged_all[col].min()
             max_val = merged_all[col].max()
@@ -327,10 +330,8 @@ with tab3:
             0.2 * (1 - merged["냉방보급률_std"])
         )
 
-        # 실제 환자수 비율
         merged["실제환자수비율"] = merged["환자수"].fillna(0) / ml_data["환자수"].max()
 
-        # 피해점수 계산
         merged["피해점수"] = 10 * (
             0.4 * merged["S"] +
             0.3 * merged["E"] +
@@ -400,7 +401,6 @@ with tab3:
 피해점수 = `{score:.4f}`
             """)
 
-        # 다운로드 (CSV)
         csv_download = merged[show_cols]
         csv_bytes = csv_download.to_csv(index=False).encode("utf-8-sig")
         st.download_button(
