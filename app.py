@@ -227,45 +227,50 @@ with tab2:
 
 with tab3:
     st.header("📍 자치구별 피해점수 및 보상 산정")
-    selected_date = st.date_input("📅 분석 날짜 선택", ...)
-    ymd = selected_date.strftime("%Y-%m-%d")
 
-    ml_data = pd.read_csv("ML_asos_dataset.csv", encoding="utf-8-sig")
-    static_data = pd.read_csv("seoul_static_data.csv", encoding="utf-8-sig")
+    try:
+        # ✅ 날짜 선택
+        selected_date = st.date_input("📅 분석 날짜 선택", datetime.date.today())
+        ymd = selected_date.strftime("%Y-%m-%d")
 
-    merged = pd.merge(ml_data, static_data, on="자치구", how="left")
-    merged = merged[merged["일자"] == ymd].copy()
-    selected_gu = st.selectbox("🏘️ 자치구 선택", sorted(merged["자치구"].unique()))
+        # ✅ 데이터 로드
+        ml_data = pd.read_csv("ML_asos_dataset.csv", encoding="utf-8-sig")
+        static_data = pd.read_csv("seoul_static_data.csv", encoding="utf-8-sig")
 
-    merged = merged[merged["자치구"] == selected_gu].copy()
+        # ✅ 자치구 병합 및 필터링
+        merged = pd.merge(ml_data, static_data, on="자치구", how="left")
+        merged = merged[merged["일자"] == ymd].copy()
 
-    # ✅ S
-    merged["S"] = 0.5 * merged["고령자비율"].fillna(0) + \
-                  0.3 * merged["야외근로자비율"].fillna(0) + \
-                  0.2 * merged["열쾌적취약인구비율"].fillna(0)
+        selected_gu = st.selectbox("🏘️ 자치구 선택", sorted(merged["자치구"].unique()))
+        merged = merged[merged["자치구"] == selected_gu].copy()
 
-    # ✅ E
-    for col in ["열섬지수", "녹지율", "냉방보급률"]:
-        std_col = (merged[col] - merged[col].min()) / (merged[col].max() - merged[col].min())
-        merged[f"{col}_std"] = std_col.fillna(0)
+        # ✅ 사회적 취약성 지수 S 계산
+        merged["S"] = 0.5 * merged["고령자비율"].fillna(0) + \
+                      0.3 * merged["야외근로자비율"].fillna(0) + \
+                      0.2 * merged["열쾌적취약인구비율"].fillna(0)
 
-    merged["E"] = 0.5 * merged["열섬지수_std"] + \
-                  0.3 * (1 - merged["녹지율_std"]) + \
-                  0.2 * (1 - merged["냉방보급률_std"])
+        # ✅ 환경적 취약성 지수 E 계산 (표준화 포함)
+        for col in ["열섬지수", "녹지율", "냉방보급률"]:
+            std_col = (merged[col] - merged[col].min()) / (merged[col].max() - merged[col].min())
+            merged[f"{col}_std"] = std_col.fillna(0)
 
-    # ✅ 환자수 비율
-    merged["예측환자수비율"] = merged["예측환자수"] / ml_data["예측환자수"].max()
-    merged["실제환자수비율"] = merged["환자수"] / ml_data["환자수"].max()
+        merged["E"] = 0.5 * merged["열섬지수_std"] + \
+                      0.3 * (1 - merged["녹지율_std"]) + \
+                      0.2 * (1 - merged["냉방보급률_std"])
 
-    # ✅ 피해점수
-    merged["피해점수"] = 10 * (
-        0.4 * merged["S"] +
-        0.3 * merged["E"] +
-        0.2 * merged["예측환자수비율"] +
-        0.1 * merged["실제환자수비율"]
-    )
+        # ✅ 예측/실제 환자수 비율
+        merged["예측환자수비율"] = merged["예측환자수"] / ml_data["예측환자수"].max()
+        merged["실제환자수비율"] = merged["환자수"] / ml_data["환자수"].max()
 
-    # ✅ 4. 피해점수 기반 위험등급
+        # ✅ 피해점수 계산
+        merged["피해점수"] = 10 * (
+            0.4 * merged["S"] +
+            0.3 * merged["E"] +
+            0.2 * merged["예측환자수비율"] +
+            0.1 * merged["실제환자수비율"]
+        )
+
+        # ✅ 위험등급 함수 정의
         def score_to_grade(s):
             if s < 20: return "🟢 매우 낮음"
             elif s < 30: return "🟡 낮음"
@@ -275,7 +280,7 @@ with tab3:
 
         merged["위험등급"] = merged["피해점수"].apply(score_to_grade)
 
-    # ✅ 5. 보상금 계산
+        # ✅ 보상금 계산 함수 정의
         def calc_payout(score):
             if score < 20: return 0
             elif score < 30: return 5000
@@ -285,21 +290,26 @@ with tab3:
 
         merged["보상금"] = merged["피해점수"].apply(calc_payout)
 
-    # ✅ 6. 가입자 수 입력 및 총 보상금 계산
+        # ✅ 가입자 수 입력 및 총 보상금
         st.markdown("### 🧾 가입자 수 입력")
         subs_count = st.number_input(f"{selected_gu} 가입자 수", min_value=0, step=1, key="subs_tab3")
         merged["가입자수"] = subs_count
         merged["예상총보상금"] = merged["보상금"] * subs_count
         st.success(f"💰 예상 보상금액: {int(merged['예상총보상금'].values[0]):,}원")
 
-    # ✅ 7. 결과 테이블 출력
+        # ✅ 결과 출력
         show_cols = ["자치구", "피해점수", "위험등급", "보상금", "가입자수", "예상총보상금"]
         st.dataframe(merged[show_cols], use_container_width=True)
 
-    # ✅ 8. 보고서 PDF 저장 (CSV 다운로드 대체)
+        # ✅ CSV 다운로드
         csv_download = merged[show_cols]
         csv_bytes = csv_download.to_csv(index=False).encode("utf-8-sig")
-        st.download_button("📥 분석 결과 CSV 다운로드", data=csv_bytes, file_name=f"피해점수_{ymd}_{selected_gu}.csv", mime="text/csv")
+        st.download_button(
+            "📥 분석 결과 CSV 다운로드",
+            data=csv_bytes,
+            file_name=f"피해점수_{ymd}_{selected_gu}.csv",
+            mime="text/csv"
+        )
 
     except Exception as e:
         st.error(f"❌ 분석 실패: {e}")
