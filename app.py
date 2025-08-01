@@ -244,16 +244,16 @@ with tab2:
     min_record_date = datetime.date(2021, 5, 1)
     max_record_date = today - datetime.timedelta(days=1)
 
-    date_selected = st.date_input("📅 기록할 날짜", value=max_record_date, min_value=min_record_date, max_value=max_record_date)
-    region = st.selectbox("🌐 광역시도 선택", ["서울특별시"], key="region_excel")
+    date_selected = st.date_input("📅 기록할 날짜", value=max_record_date, min_value=min_record_date, max_value=max_record_date, key="date_tab2")
+    region = st.selectbox("🌐 광역시도 선택", ["서울특별시"], key="region_tab2")
     gu = st.selectbox("🏘️ 자치구 선택", [
         '종로구', '중구', '용산구', '성동구', '광진구', '동대문구', '중랑구', '성북구', '강북구', '도봉구',
         '노원구', '은평구', '서대문구', '마포구', '양천구', '강서구', '구로구', '금천구', '영등포구',
         '동작구', '관악구', '서초구', '강남구', '송파구', '강동구'
-    ])
+    ], key="gu_tab2")
 
     # ✅ 2. 질병청 엑셀 파일 업로드
-    uploaded_file = st.file_uploader("📎 질병청 환자수 파일 업로드 (.xlsx, 시트명: 서울특별시)", type=["xlsx"])
+    uploaded_file = st.file_uploader("📎 질병청 환자수 파일 업로드 (.xlsx, 시트명: 서울특별시)", type=["xlsx"], key="upload_tab2")
 
     if uploaded_file:
         try:
@@ -300,7 +300,7 @@ with tab2:
             st.dataframe(preview_df)
 
             # ✅ 6. GitHub 저장 버튼
-            if st.button("💾 GitHub에 저장하기"):
+            if st.button("💾 GitHub에 저장하기", key="save_tab2"):
                 csv_path = "ML_asos_dataset.csv"
                 if os.path.exists(csv_path):
                     try:
@@ -315,7 +315,6 @@ with tab2:
                 df_all.to_csv(csv_path, index=False, encoding="utf-8-sig")
 
                 # ✅ GitHub API 업로드
-                from urllib.parse import unquote
                 GITHUB_USERNAME = st.secrets["GITHUB"]["USERNAME"]
                 GITHUB_REPO = st.secrets["GITHUB"]["REPO"]
                 GITHUB_BRANCH = st.secrets["GITHUB"]["BRANCH"]
@@ -351,4 +350,3 @@ with tab2:
 
         except Exception as e:
             st.error(f"❌ 처리 중 오류 발생: {e}")
-
