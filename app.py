@@ -331,8 +331,8 @@ with tab3:
         seoul_pred = float(pred_row["서울시예측환자수"].values[0]) if not pred_row.empty else 0
         if seoul_pred == 0:
             st.warning(f"⚠️ {ymd} 예측값이 없습니다.")
-
-                merged_all["예측환자수"] = seoul_pred
+            st.stop()
+        merged_all["예측환자수"] = seoul_pred
 
         merged_all["S"] = merged_all.apply(calculate_social_index, axis=1)
         for col in ["열섬지수", "녹지율", "냉방보급률"]:
