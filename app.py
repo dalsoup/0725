@@ -354,7 +354,7 @@ with tab3:
         show_cols = ["자치구", "피해점수", "위험등급", "보상금", "가입자수", "예상총보상금"]
         st.dataframe(merged[show_cols], use_container_width=True)
 
-        st.markdown("### 📊 피해점수 분포")
+        st.markdown("#### 📊 피해점수 분포")
         st.bar_chart(data=merged_all.set_index("자치구")["피해점수"])
 
         # 로그 및 다운로드
