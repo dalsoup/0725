@@ -328,10 +328,12 @@ with tab3:
 
         df_total = load_csv_with_fallback("ML_asos_total_prediction.csv")
         pred_row = df_total[df_total["일자"] == ymd]
-        seoul_pred = float(pred_row["서울시예측환자수"].values[0]) if not pred_row.empty else 0
-        if seoul_pred == 0:
-            st.warning(f"⚠️ {ymd} 예측값이 없습니다.")
+
+        if pred_row.empty:
+            st.warning(f"⚠️ {ymd} 예측값이 존재하지 않습니다. tab1에서 먼저 예측을 수행하세요.")
             st.stop()
+
+        seoul_pred = float(pred_row["서울시예측환자수"].values[0])
         merged_all["예측환자수"] = seoul_pred
 
         merged_all["S"] = merged_all.apply(calculate_social_index, axis=1)
@@ -360,11 +362,10 @@ with tab3:
         show_cols = ["자치구", "피해점수", "위험등급", "보상금", "가입자수", "예상총보상금"]
         st.dataframe(merged[show_cols], use_container_width=True)
 
-        # 📊 시각화: 피해점수 히스토그램
         st.markdown("### 📊 피해점수 분포")
         st.bar_chart(data=merged_all.set_index("자치구")["피해점수"])
 
-        # 📄 디버깅 로그 - 선택 자치구
+        # 로그 및 다운로드
         row = merged.iloc[0]
         s_val = row["S"]
         e_val = row["E"]
@@ -407,7 +408,6 @@ with tab3:
                 mime="text/plain"
             )
 
-        # 📄 디버깅 로그 - 전체 자치구
         all_debug_logs = ""
         for _, row in merged_all.iterrows():
             s_val = row["S"]
@@ -471,4 +471,3 @@ with tab3:
 
     except Exception as e:
         st.error(f"❌ 분석 실패: {e}")
-
