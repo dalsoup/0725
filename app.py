@@ -352,7 +352,6 @@ with tab3:
         selected_gu = st.selectbox("🏘️ 자치구 선택", sorted(merged_all["자치구"].unique()))
         merged = merged_all[merged_all["자치구"] == selected_gu].copy()
 
-        st.markdown("### 🧾 가입자 수 입력")
         subs_count = st.number_input(f"{selected_gu} 가입자 수", min_value=0, step=1, key="subs_tab3")
         merged["가입자수"] = subs_count
         merged["예상총보상금"] = merged["보상금"] * subs_count
