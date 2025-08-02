@@ -298,7 +298,7 @@ with tab3:
         else: return "🔥 매우 높음"
 
     def calc_payout(score):
- 	if score < 30: return 0
+        if score < 30: return 0
         elif score < 40: return 5000
         elif score < 50: return 10000
         else: return 20000
