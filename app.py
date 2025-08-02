@@ -305,16 +305,8 @@ with tab3:
         else: return 30000
 
     try:
-        with st.container():
-            col1, col2 = st.columns([2, 2])
-            with col1:
-                selected_date = st.date_input("📅 분석 날짜 선택", datetime.date.today())
-            with col2:
-                selected_gu_placeholder = st.selectbox("🏘️ 자치구 선택", [], key="placeholder_select")  # placeholder
+        selected_date = st.date_input("📅 분석 날짜 선택", datetime.date.today())
         ymd = selected_date.strftime("%Y-%m-%d")
-
-        if not st.button("📊 피해점수 계산하기"):
-            st.stop()
 
         def load_csv_with_fallback(path):
             for enc in ["utf-8-sig", "cp949", "euc-kr"]:
@@ -326,7 +318,6 @@ with tab3:
 
         ml_data = load_csv_with_fallback("ML_asos_dataset.csv")
         static_data = load_csv_with_fallback("seoul_static_data.csv")
-        selected_gu = st.selectbox("🏘️ 자치구 선택", sorted(static_data["자치구"].unique()), index=0, key="final_select")
 
         merged_all = pd.merge(static_data, ml_data, on="자치구", how="left")
         merged_all = merged_all[merged_all["일자"] == ymd].copy()
@@ -368,10 +359,6 @@ with tab3:
 
         show_cols = ["자치구", "피해점수", "위험등급", "보상금", "가입자수", "예상총보상금"]
         st.dataframe(merged[show_cols], use_container_width=True)
-
-        st.markdown("### 🧮 요약 결과")
-        st.metric(label="🔥 피해점수", value=f"{float(merged['피해점수'].values[0]):.2f}점")
-        st.metric(label="💰 인당 보상금", value=f"{int(merged['보상금'].values[0]):,}원")
 
         # 📊 시각화: 피해점수 히스토그램
         st.markdown("### 📊 피해점수 분포")
@@ -484,3 +471,4 @@ with tab3:
 
     except Exception as e:
         st.error(f"❌ 분석 실패: {e}")
+
