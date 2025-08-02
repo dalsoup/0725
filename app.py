@@ -310,7 +310,7 @@ with tab3:
             with col1:
                 selected_date = st.date_input("📅 분석 날짜 선택", datetime.date.today())
             with col2:
-                selected_gu = st.selectbox("🏘️ 자치구 선택", [])  # placeholder, will be redefined after static_data load
+                selected_gu_placeholder = st.selectbox("🏘️ 자치구 선택", [], key="placeholder_select")  # placeholder
         ymd = selected_date.strftime("%Y-%m-%d")
 
         if not st.button("📊 피해점수 계산하기"):
@@ -326,7 +326,7 @@ with tab3:
 
         ml_data = load_csv_with_fallback("ML_asos_dataset.csv")
         static_data = load_csv_with_fallback("seoul_static_data.csv")
-        selected_gu = st.selectbox("🏘️ 자치구 선택", sorted(static_data["자치구"].unique()), index=0)
+        selected_gu = st.selectbox("🏘️ 자치구 선택", sorted(static_data["자치구"].unique()), index=0, key="final_select")
 
         merged_all = pd.merge(static_data, ml_data, on="자치구", how="left")
         merged_all = merged_all[merged_all["일자"] == ymd].copy()
