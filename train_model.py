@@ -29,7 +29,7 @@ if os.path.exists(DYNAMIC_FILE):
     print("✅ 동적 데이터 로드 완료:", df_dynamic.shape)
     df = pd.concat([df_static, df_dynamic], ignore_index=True)
 else:
-    print(⚠️ 동적 데이터 없음 → 정적 데이터만 사용")
+    print("⚠️ 동적 데이터 없음 → 정적 데이터만 사용")
     df = df_static.copy()
 
 print("📊 결합 후 전체 행 수:", len(df))
