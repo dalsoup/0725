@@ -263,8 +263,6 @@ with tab2:
             st.error(f"❌ 처리 중 오류 발생: {e}")
 
 with tab3:
-    st.header("📍 자치구별 피해점수 및 보상금 계산하기")
-
     def calculate_social_index(row):
         return (
             0.5 * row["고령자비율"] +
