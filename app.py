@@ -265,7 +265,6 @@ with tab2:
 with tab3:
     st.header("📍 자치구별 피해점수 및 보상 산정")
 
-    # ------------------------ [함수 정의] ------------------------
     def calculate_social_index(row):
         return (
             0.5 * row["고령자비율"] +
@@ -286,13 +285,14 @@ with tab3:
             0.2 * (1 - row["냉방보급률_std"])
         )
 
-    def calculate_damage_score(s, e, pred_ratio, real_ratio):
+    def calculate_damage_score(s, e, pred_ratio, real_ratio, seoul_pred):
+        adjustment = (seoul_pred / 6.8) ** 0.5 if seoul_pred > 0 else 1
         return 10 * (
             0.4 * s * 1.5 +
             0.3 * e +
-            0.2 * (pred_ratio ** 0.5) +
-            0.1 * (real_ratio ** 0.5)
-        )
+            0.2 * (pred_ratio ** 0.5) * 2 +
+            0.1 * (real_ratio ** 0.5) * 2
+        ) * adjustment
 
     def score_to_grade(score):
         if score < 20: return "🟢 매우 낮음"
@@ -308,7 +308,6 @@ with tab3:
         elif score < 50: return 20000
         else: return 30000
 
-    # ------------------------ [데이터 로딩 및 처리] ------------------------
     try:
         selected_date = st.date_input("📅 분석 날짜 선택", datetime.date.today())
         ymd = selected_date.strftime("%Y-%m-%d")
@@ -349,7 +348,7 @@ with tab3:
 
         merged_all["피해점수"] = merged_all.apply(
             lambda row: calculate_damage_score(
-                row["S"], row["E"], row["예측환자수비율"], row["실제환자수비율"]
+                row["S"], row["E"], row["예측환자수비율"], row["실제환자수비율"], seoul_pred
             ),
             axis=1
         )
