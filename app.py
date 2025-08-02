@@ -265,6 +265,50 @@ with tab2:
 with tab3:
     st.header("📍 자치구별 피해점수 및 보상 산정")
 
+    # ------------------------ [함수 정의] ------------------------
+    def calculate_social_index(row):
+        return (
+            0.5 * row["고령자비율"] +
+            0.3 * row["야외근로자비율"] +
+            0.2 * row["열쾌적취약인구비율"]
+        )
+
+    def standardize_column(df, col):
+        min_val = df[col].min()
+        max_val = df[col].max()
+        range_val = max_val - min_val if max_val != min_val else 1
+        return (df[col] - min_val) / range_val
+
+    def calculate_environment_index(row):
+        return (
+            0.5 * row["열섬지수_std"] +
+            0.3 * (1 - row["녹지율_std"]) +
+            0.2 * (1 - row["냉방보급률_std"])
+        )
+
+    def calculate_damage_score(s, e, pred_ratio, real_ratio):
+        return 10 * (
+            0.4 * s * 1.5 +
+            0.3 * e +
+            0.2 * (pred_ratio ** 0.5) +
+            0.1 * (real_ratio ** 0.5)
+        )
+
+    def score_to_grade(score):
+        if score < 20: return "🟢 매우 낮음"
+        elif score < 30: return "🟡 낮음"
+        elif score < 40: return "🟠 보통"
+        elif score < 50: return "🔴 높음"
+        else: return "🔥 매우 높음"
+
+    def calc_payout(score):
+        if score < 20: return 0
+        elif score < 30: return 5000
+        elif score < 40: return 10000
+        elif score < 50: return 20000
+        else: return 30000
+
+    # ------------------------ [데이터 로딩 및 처리] ------------------------
     try:
         selected_date = st.date_input("📅 분석 날짜 선택", datetime.date.today())
         ymd = selected_date.strftime("%Y-%m-%d")
@@ -287,11 +331,7 @@ with tab3:
             st.warning("❗️선택한 날짜의 데이터가 없습니다.")
             st.stop()
 
-        try:
-            df_total = pd.read_csv("ML_asos_total_prediction.csv", encoding="utf-8-sig")
-        except UnicodeDecodeError:
-            df_total = pd.read_csv("ML_asos_total_prediction.csv", encoding="cp949")
-
+        df_total = load_csv_with_fallback("ML_asos_total_prediction.csv")
         pred_row = df_total[df_total["일자"] == ymd]
         seoul_pred = float(pred_row["서울시예측환자수"].values[0]) if not pred_row.empty else 0
         if seoul_pred == 0:
@@ -301,51 +341,22 @@ with tab3:
         merged_all["예측환자수"] = seoul_pred * (merged_all["전체인구"] / total_population)
         merged_all["예측환자수비율"] = merged_all["예측환자수"] / seoul_pred
 
-        merged_all["S"] = (
-            0.5 * merged_all["고령자비율"].fillna(0) +
-            0.3 * merged_all["야외근로자비율"].fillna(0) +
-            0.2 * merged_all["열쾌적취약인구비율"].fillna(0)
-        )
-
+        merged_all["S"] = merged_all.apply(calculate_social_index, axis=1)
         for col in ["열섬지수", "녹지율", "냉방보급률"]:
-            min_val = merged_all[col].min()
-            max_val = merged_all[col].max()
-            range_val = max_val - min_val if max_val != min_val else 1
-            merged_all[f"{col}_std"] = (merged_all[col] - min_val) / range_val
-
-        merged_all["E"] = (
-            0.5 * merged_all["열섬지수_std"] +
-            0.3 * (1 - merged_all["녹지율_std"]) +
-            0.2 * (1 - merged_all["냉방보급률_std"])
-        )
-
+            merged_all[f"{col}_std"] = standardize_column(merged_all, col)
+        merged_all["E"] = merged_all.apply(calculate_environment_index, axis=1)
         merged_all["실제환자수비율"] = merged_all["환자수"].fillna(0) / ml_data["환자수"].max()
 
-        # ✅ 개선된 피해점수 산식
-        merged_all["피해점수"] = 10 * (
-            0.4 * (merged_all["S"] * 1.5) +
-            0.3 * merged_all["E"] +
-            0.2 * (merged_all["예측환자수비율"] ** 0.5) +
-            0.1 * (merged_all["실제환자수비율"] ** 0.5)
+        merged_all["피해점수"] = merged_all.apply(
+            lambda row: calculate_damage_score(
+                row["S"], row["E"], row["예측환자수비율"], row["실제환자수비율"]
+            ),
+            axis=1
         )
-
-        def score_to_grade(s):
-            if s < 20: return "🟢 매우 낮음"
-            elif s < 30: return "🟡 낮음"
-            elif s < 40: return "🟠 보통"
-            elif s < 50: return "🔴 높음"
-            else: return "🔥 매우 높음"
-
-        def calc_payout(score):
-            if score < 20: return 0
-            elif score < 30: return 5000
-            elif score < 40: return 10000
-            elif score < 50: return 20000
-            else: return 30000
-
         merged_all["위험등급"] = merged_all["피해점수"].apply(score_to_grade)
         merged_all["보상금"] = merged_all["피해점수"].apply(calc_payout)
 
+        # ------------------------ [UI] ------------------------
         selected_gu = st.selectbox("🏘️ 자치구 선택", sorted(merged_all["자치구"].unique()))
         merged = merged_all[merged_all["자치구"] == selected_gu].copy()
 
@@ -358,6 +369,7 @@ with tab3:
         show_cols = ["자치구", "피해점수", "위험등급", "보상금", "가입자수", "예상총보상금"]
         st.dataframe(merged[show_cols], use_container_width=True)
 
+        # ------------------------ [디버깅 로그 - 선택 자치구] ------------------------
         with st.expander("🔎 피해점수 계산 상세 보기"):
             s_val = float(merged["S"].values[0])
             e_val = float(merged["E"].values[0])
@@ -390,7 +402,6 @@ with tab3:
 --------------------------------------------------
 """
             st.code(debug_log, language="text")
-
             st.download_button(
                 label="📄 현재 자치구 디버깅 로그 다운로드",
                 data=debug_log.encode("utf-8-sig"),
@@ -398,7 +409,7 @@ with tab3:
                 mime="text/plain"
             )
 
-        # ✅ 전체 자치구 디버깅 로그 일괄 다운로드
+        # ------------------------ [디버깅 로그 - 전체 자치구] ------------------------
         all_debug_logs = ""
         for _, row in merged_all.iterrows():
             s = row["S"]
@@ -458,7 +469,6 @@ with tab3:
             > 🧮 **피해점수 계산식**  
             피해점수 = 10 × (0.4 × (S×1.5) + 0.3 × E + 0.2 × √예측비율 + 0.1 × √실제비율)
             """)
-
     except Exception as e:
         st.error(f"❌ 분석 실패: {e}")
 
