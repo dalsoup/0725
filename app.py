@@ -25,22 +25,40 @@ GITHUB_FILENAME = "ML_asos_dataset.csv"
 
 # ----------------------- 🧭 UI 시작 -----------------------
 st.title("HeatAI")
-tab1, tab2, tab3 = st.tabs(["📊 폭염 피해 AI 예측 탭", "📥 실제 폭염 피해 기록 탭", "📍 자치구별 피해점수 및 보상금 계산탭"])
+tab1, tab2, tab3 = st.tabs(["📊 폭염 예측 및 위험도 분석", "📥 실제 피해 기록 및 데이터 입력", "📍 자치구별 피해점수 및 보상 분석"])
 
 # ====================================================================
 # 🔮 예측 탭
 # ====================================================================
 with tab1:
-    # ✅ 날짜 선택 범위 설정: 2021-05-01 ~ 오늘+30일
-    today = datetime.date.today()
-    min_pred_date = datetime.date(2021, 5, 1)
-    max_pred_date = today + datetime.timedelta(days=30)
+    # ✅ 사용법 안내
+    with st.expander("📊 tab1에서 입력된 정보는 이렇게 활용됩니다"):
+        st.markdown("""
+        1. 기상청의 **단기예보 API를 통해 자동으로 수집된 날씨 정보**(기온, 습도 등)를 바탕으로,  
+           AI가 선택한 지역의 **예측 온열질환자 수**를 산출합니다.
+
+        2. 예측 모델은 **2021~2024년 7~8월 동안의 실제 기상 조건과 온열질환자 수** 데이터를 학습했습니다.  
+           현재 입력된 기상 조건이 과거 어떤 날과 유사한지를 바탕으로  
+           **AI가 발생 가능성이 높은 환자 수를 추정**합니다.
+
+        3. 예측된 환자 수는 **위험도 등급(🟢~🔥)**으로 변환되어 시민에게 전달되며,  
+           tab3의 **자치구별 피해점수 계산에 활용되는 입력값(P_pred)**으로도 사용됩니다.
+
+        📍 기상청 예보는 **지점 단위(광역시도)** 기준으로 제공되므로,  
+        현재는 **자치구 단위가 아닌 광역시도 단위로만 예측이 가능합니다.**
+
+        📅 예측 가능한 날짜는 **2025년 7월 1일부터 8월 31일까지**입니다.
+        """)
+
+    # ✅ 날짜 선택 범위 설정: 2025-07-01 ~ 2025-08-31
+    min_pred_date = datetime.date(2025, 7, 1)
+    max_pred_date = datetime.date(2025, 8, 31)
 
     # ✅ 지역 및 날짜 선택
     region = st.selectbox("지역 선택", list(region_to_stn_id.keys()), key="region_tab1")
     date_selected = st.date_input(
         "날짜 선택",
-        value=today,
+        value=min_pred_date,
         min_value=min_pred_date,
         max_value=max_pred_date,
         key="date_tab1"
@@ -107,7 +125,7 @@ with tab1:
             st.markdown(f"📅 **전년도({(date_selected - datetime.timedelta(days=365)).strftime('%Y-%m-%d')}) 동일 날짜 환자수**: **{last_year_count}명**")
             st.markdown(f"📈 **전년 대비 증감**: {'+' if delta >= 0 else ''}{delta:.1f}명")
         else:
-            st.markdown("📭 전년도 동일 날짜의 환자 수 데이터를 찾을 수 없습니다.")
+            st.markdown("전년도 동일 날짜의 환자 수 데이터를 찾을 수 없습니다.")
 
         # ✅ 예측값 CSV로 저장 (tab3에서 활용)
         SAVE_FILE = "ML_asos_total_prediction.csv"
@@ -127,42 +145,64 @@ with tab1:
 
         st.success(f"✅ 예측값이 '{SAVE_FILE}'에 저장되었습니다.")
 
-
-# ====================================================================
-# 📥 실제 폭염 피해 기록 탭
-# ====================================================================
 with tab2:
-    with st.expander("ℹ️ tab2 사용법"):
+    # ✅ 사용법 안내
+    with st.expander("📊 tab2에서 입력된 정보는 이렇게 활용됩니다"):
         st.markdown("""
-        **✅ 사용 방법**  
-        1. 날짜(복수 가능)와 자치구(전체 또는 일부)를 선택하세요.  
-        2. 아래 링크에서 질병청의 온열질환자 엑셀 파일을 다운로드해 업로드하세요.  
-           👉 [온열질환 응급실감시체계 다운로드](https://www.kdca.go.kr/board/board.es?mid=a20205030102&bid=0004&&cg_code=C01)  
-        3. **저장하기** 버튼을 누르면, 해당 데이터는 tab3의 자치구별 피해점수 산정을 위한 입력값으로 자동 반영됩니다.
+        1. 서울특별시 각 자치구의 **실제 폭염 피해 여부(1 또는 0)**를 수집하여,  
+           **tab3의 피해점수 계산**에 활용됩니다.  
+           (※ 온열질환자 수가 **1명 이상 발생한 경우 → 피해 발생(1)**로 간주합니다.)
+
+        2. 실제 기상조건과 온열질환자 수를 함께 저장하여,  
+           **tab1의 머신러닝 예측 모델 학습 데이터로 자동 반영**됩니다.
+
+        📅 **정확한 피해 판단을 위해 오늘 날짜는 제외되며, 어제까지의 정보만 저장할 수 있습니다.**  
+        이는 질병관리청의 온열질환자 통계가 **하루 단위로 집계되어 익일에 공개**되기 때문입니다.
+
+        📂 아래 링크에서 질병청의 온열질환자 엑셀 파일을 다운로드해 업로드해주세요.  
+        👉 [온열질환 응급실감시체계 다운로드](https://www.kdca.go.kr/board/board.es?mid=a20205030102&bid=0004&&cg_code=C01)
+
+        ✅ 모든 입력이 완료되면 **저장하기** 버튼을 눌러주세요.  
+        입력된 데이터는 자동으로 내부 DB에 기록되어 다른 탭에서 즉시 활용됩니다.
         """)
 
-    region = st.selectbox("🌐 광역시도 선택", ["서울특별시"], key="region_tab2")
+    # ✅ 광역시도 선택 (현재는 서울만)
+    region = st.selectbox(
+        "🌐 광역시도 선택", 
+        ["서울특별시"], 
+        key="region_tab2"
+    )
 
+    # ✅ 자치구 선택
     all_gus = [
         '종로구', '중구', '용산구', '성동구', '광진구', '동대문구', '중랑구', '성북구', '강북구', '도봉구',
         '노원구', '은평구', '서대문구', '마포구', '양천구', '강서구', '구로구', '금천구', '영등포구',
         '동작구', '관악구', '서초구', '강남구', '송파구', '강동구'
     ]
-
-    gus = st.multiselect("🏘️ 자치구 선택 (선택하지 않으면 전체)", all_gus, key="gu_tab2_multi")
+    gus = st.multiselect(
+        "🏘️ 자치구 선택 (선택하지 않으면 전체)", 
+        all_gus, 
+        key="gu_tab2_multi"
+    )
     if not gus:
         gus = all_gus
 
-    # ✅ 날짜 선택: pandas → date 변환
-    min_record_date = datetime.date(2021, 5, 1)
+    # ✅ 기록 가능한 날짜 범위: 2025-07-01 ~ 오늘 하루 전
+    min_record_date = datetime.date(2025, 7, 1)
     max_record_date = datetime.date.today() - datetime.timedelta(days=1)
-    date_range = [d.date() for d in pd.date_range(min_record_date, max_record_date, freq='D')]
 
-    dates_selected = st.multiselect("📅 기록할 날짜 (복수 선택 가능)", date_range, default=[max_record_date])
+    # ✅ 단일 날짜 선택 UI
+    date_selected = st.date_input(
+        "📅 저장할 날짜 선택", 
+        value=max_record_date, 
+        min_value=min_record_date, 
+        max_value=max_record_date,
+        key="date_tab2"
+    )
 
     uploaded_file = st.file_uploader("📎 질병청 환자수 파일 업로드 (.xlsx, 시트명: 서울특별시)", type=["xlsx"], key="upload_tab2")
 
-    if uploaded_file and dates_selected:
+    if uploaded_file and date_selected:
         try:
             df_raw = pd.read_excel(uploaded_file, sheet_name="서울특별시", header=None)
             districts = df_raw.iloc[0, 1::2].tolist()
@@ -210,7 +250,7 @@ with tab2:
                 st.stop()
 
             preview_df = pd.DataFrame(preview_list)
-            st.markdown("### ✅ 저장될 학습 데이터 미리보기")
+            st.markdown("#### ✅ 저장될 학습 데이터 미리보기")
             st.dataframe(preview_df)
 
             if st.button("💾 GitHub에 저장하기", key="save_tab2_multi"):
@@ -259,6 +299,36 @@ with tab2:
             st.error(f"❌ 처리 중 오류 발생: {e}")
 
 with tab3:
+    # ✅ 사용법 안내
+    with st.expander("📊 tab3에서 산출된 정보는 이렇게 활용됩니다"):
+        st.markdown("""
+        1. tab1에서 예측한 **광역시도별 온열질환자 수**를 자치구별 **사회적 취약성(S)**에    
+           따라 분배하고, 정규화하여 자치구별 **예측 환자수(P_pred)**로 변환합니다.
+        2. tab2에서 수집된 **실제 온열질환자 수(P_real)**,  
+           그리고 자치구별 **사회적(S)** 및 **환경적(E)** 취약성 지표와 함께  
+           **종합적인 피해점수(0~100점)**를 계산합니다.
+        3. 피해점수가 높을수록 해당 자치구가 더 큰 폭염 피해 위험에 노출된 것으로 간주되며,  
+           위험등급(🟢~🔥)과 **보상금 산정 기준**으로 활용됩니다.
+
+        📌 피해점수 계산은 다음 요소를 기반으로 이루어집니다:
+        - 🧓 S: 고령자 비율, 야외 근로자 비율, 열취약 인구 비율  
+        - 🌍 E: 열섬지수, 녹지율, 냉방보급률 (표준화된 환경지표)  
+        - 📈 P_pred: AI 예측 환자 수 (자치구별 분배 및 정규화)  
+        - 📉 P_real: 실제 환자 수 (1명 이상이면 1.0, 없으면 0.0)
+
+        피해점수 = 100 × (0.2 × S + 0.2 × E + 0.5 × P_pred + 0.1 × P_real)
+        """)
+
+    # ✅ 함수 정의
+    def format_debug_log(row, date_str):
+        return f"""[피해점수 계산 로그 - {row['자치구']} / {date_str}]
+[S 계산] - 고령자비율 = {row['고령자비율']:.4f}, 야외근로자비율 = {row['야외근로자비율']:.4f}, 열취약인구비율 = {row['열쾌적취약인구비율']:.4f} → S = {row['S']:.4f}
+[E 계산] - 열섬지수 = {row['열섬지수_std']:.4f}, 녹지율 = {row['녹지율_std']:.4f}, 냉방보급률 = {row['냉방보급률_std']:.4f} → E = {row['E']:.4f}
+[P 계산] - 예측환자수 = {row['P_pred_raw']:.2f}명 → 정규화(P_pred) = {row['P_pred']:.4f}
+[R 계산] - 실제환자수 = {row['환자수']}, 변환(P_real) = {1.0 if row['환자수'] >= 1 else 0.0}
+🧮 피해점수 = {row['피해점수']:.2f} / 위험등급: {row['위험등급']} / 보상금: {row['보상금']}원
+"""
+
     def calculate_social_index(row):
         return (
             0.5 * row["고령자비율"] +
@@ -279,10 +349,18 @@ with tab3:
             0.2 * (1 - row["냉방보급률_std"])
         )
 
-    def calculate_damage_score(s, e, pred_count, real_count):
-        P_pred = min(pred_count / 25, 1.0)
-        P_real = 1.0 if real_count >= 1 else 0.0
-        return 100 * (0.4 * s + 0.3 * e + 0.2 * P_pred + 0.1 * P_real)
+    def distribute_pred_by_s(merged_df, total_pred):
+        """
+        S 비율에 따라 자치구별 예측환자수 분배 및 √ 정규화
+        (25명은 서울시 하루 최대 예측 환자수 기준으로 정규화에 사용됨)
+        """
+        s_sum = merged_df["S"].sum()
+        merged_df["P_pred_raw"] = total_pred * (merged_df["S"] / s_sum)
+        merged_df["P_pred"] = (merged_df["P_pred_raw"] / 25) ** 0.5
+        return merged_df
+
+    def calculate_damage_score_v2(s, e, p_pred, p_real):
+        return 100 * (0.2 * s + 0.2 * e + 0.5 * p_pred + 0.1 * p_real)
 
     def score_to_grade(score):
         if score < 20: return "🟢 매우 낮음"
@@ -297,23 +375,28 @@ with tab3:
         elif score < 50: return 10000
         else: return 20000
 
-    try:
-        selected_date = st.date_input("📅 분석 날짜 선택", datetime.date.today())
-        ymd = selected_date.strftime("%Y-%m-%d")
+    def load_csv_with_fallback(path):
+        for enc in ["utf-8-sig", "cp949", "euc-kr"]:
+            try:
+                return pd.read_csv(path, encoding=enc)
+            except UnicodeDecodeError:
+                continue
+        raise UnicodeDecodeError(f"❌ 인코딩 실패: {path}")
 
-        def load_csv_with_fallback(path):
-            for enc in ["utf-8-sig", "cp949", "euc-kr"]:
-                try:
-                    return pd.read_csv(path, encoding=enc)
-                except UnicodeDecodeError:
-                    continue
-            raise UnicodeDecodeError(f"❌ 인코딩 실패: {path}")
+    # ✅ 메인 실행
+    try:
+        col1, col2 = st.columns(2)
+        with col1:
+            selected_date = st.date_input("📅 분석 날짜 선택", datetime.date.today())
+            ymd = selected_date.strftime("%Y-%m-%d")
+        with col2:
+            selected_gu = None
 
         ml_data = load_csv_with_fallback("ML_asos_dataset.csv")
-        static_data = load_csv_with_fallback("seoul_static_data.csv")
+        ml_data = ml_data[ml_data["일자"] == ymd]
 
+        static_data = load_csv_with_fallback("seoul_static_data.csv")
         merged_all = pd.merge(static_data, ml_data, on="자치구", how="left")
-        merged_all = merged_all[merged_all["일자"] == ymd].copy()
 
         if merged_all.empty:
             st.warning("❗️선택한 날짜의 데이터가 없습니다.")
@@ -327,29 +410,37 @@ with tab3:
             st.stop()
 
         seoul_pred = float(pred_row["서울시예측환자수"].values[0])
-        merged_all["예측환자수"] = seoul_pred
 
         merged_all["S"] = merged_all.apply(calculate_social_index, axis=1)
         for col in ["열섬지수", "녹지율", "냉방보급률"]:
             merged_all[f"{col}_std"] = standardize_column(merged_all, col)
         merged_all["E"] = merged_all.apply(calculate_environment_index, axis=1)
 
+        merged_all = distribute_pred_by_s(merged_all, seoul_pred)
+
         merged_all["피해점수"] = merged_all.apply(
-            lambda row: calculate_damage_score(
-                row["S"], row["E"], row["예측환자수"], row["환자수"]
+            lambda row: calculate_damage_score_v2(
+                row["S"], row["E"], row["P_pred"], 1.0 if row["환자수"] >= 1 else 0.0
             ),
             axis=1
         )
         merged_all["위험등급"] = merged_all["피해점수"].apply(score_to_grade)
         merged_all["보상금"] = merged_all["피해점수"].apply(calc_payout)
 
-        selected_gu = st.selectbox("🏘️ 자치구 선택", sorted(merged_all["자치구"].unique()))
-        merged = merged_all[merged_all["자치구"] == selected_gu].copy()
+        col1, col2 = st.columns(2)
+        with col1:
+            selected_gu = st.selectbox("🏘️ 자치구 선택", sorted(merged_all["자치구"].unique()))
+        with col2:
+            subs_count = st.number_input(f"{selected_gu} 가입자 수", min_value=0, step=1, key="subs_tab3")
 
-        subs_count = st.number_input(f"{selected_gu} 가입자 수", min_value=0, step=1, key="subs_tab3")
+        merged = merged_all[merged_all["자치구"] == selected_gu].copy()
+        if merged.empty:
+            st.warning("선택한 자치구에 해당하는 데이터가 없습니다.")
+            st.stop()
+
         merged["가입자수"] = subs_count
         merged["예상총보상금"] = merged["보상금"] * subs_count
-        st.success(f"💰 예상 보상금액: {int(merged['예상총보상금'].values[0]):,}원")
+        st.success(f"💰 예상 보상금액: {int(merged['예상총보상금'].sum()):,}원")
 
         show_cols = ["자치구", "피해점수", "위험등급", "보상금", "가입자수", "예상총보상금"]
         st.dataframe(merged[show_cols], use_container_width=True)
@@ -357,40 +448,10 @@ with tab3:
         st.markdown("#### 📊 피해점수 분포")
         st.bar_chart(data=merged_all.set_index("자치구")["피해점수"])
 
-        # 로그 및 다운로드
+        # ✅ 단일 자치구 디버깅 로그
         row = merged.iloc[0]
-        s_val = row["S"]
-        e_val = row["E"]
-        pred_count = row["예측환자수"]
-        real_count = row["환자수"]
-        score = row["피해점수"]
-        P_pred = min(pred_count / 25, 1.0)
-        P_real = 1.0 if real_count >= 1 else 0.0
+        single_log = format_debug_log(row, ymd)
 
-        single_log = f"""
-[피해점수 계산 로그 - {selected_gu} / {ymd}]
---------------------------------------------------
-[S 계산]
-- 고령자비율              = {row['고령자비율']:.4f}
-- 야외근로자비율          = {row['야외근로자비율']:.4f}
-- 열쾌적취약인구비율      = {row['열쾌적취약인구비율']:.4f}
-=> S = {s_val:.4f}
-
-[E 계산]
-- 열섬지수 (표준화)       = {row['열섬지수_std']:.4f}
-- 녹지율 (표준화)         = {row['녹지율_std']:.4f}
-- 냉방보급률 (표준화)     = {row['냉방보급률_std']:.4f}
-=> E = {e_val:.4f}
-
-[환자 수 입력값]
-- 예측환자수              = {pred_count:.1f}명 → 정규화 = {P_pred:.3f}
-- 실제환자수              = {real_count:.1f}명 → 정규화 = {P_real:.1f}
-
-[최종 피해점수 계산]
-피해점수 = 100 × (0.4×{s_val:.4f} + 0.3×{e_val:.4f} + 0.2×{P_pred:.4f} + 0.1×{P_real:.1f})  
-         = {score:.2f}
---------------------------------------------------
-"""
         with st.expander(f"🔎 {selected_gu} 디버깅 로그"):
             st.code(single_log, language="text")
             st.download_button(
@@ -400,42 +461,10 @@ with tab3:
                 mime="text/plain"
             )
 
-        all_debug_logs = ""
-        for _, row in merged_all.iterrows():
-            s_val = row["S"]
-            e_val = row["E"]
-            pred_count = row["예측환자수"]
-            real_count = row["환자수"]
-            score = row["피해점수"]
-            P_pred = min(pred_count / 25, 1.0)
-            P_real = 1.0 if real_count >= 1 else 0.0
-
-            log = f"""
-[피해점수 계산 로그 - {row['자치구']} / {ymd}]
---------------------------------------------------
-[S 계산]
-- 고령자비율              = {row['고령자비율']:.4f}
-- 야외근로자비율          = {row['야외근로자비율']:.4f}
-- 열쾌적취약인구비율      = {row['열쾌적취약인구비율']:.4f}
-=> S = {s_val:.4f}
-
-[E 계산]
-- 열섬지수 (표준화)       = {row['열섬지수_std']:.4f}
-- 녹지율 (표준화)         = {row['녹지율_std']:.4f}
-- 냉방보급률 (표준화)     = {row['냉방보급률_std']:.4f}
-=> E = {e_val:.4f}
-
-[환자 수 입력값]
-- 예측환자수              = {pred_count:.1f}명 → 정규화 = {P_pred:.3f}
-- 실제환자수              = {real_count:.1f}명 → 정규화 = {P_real:.1f}
-
-[최종 피해점수 계산]
-피해점수 = 100 × (0.4×{s_val:.4f} + 0.3×{e_val:.4f} + 0.2×{P_pred:.4f} + 0.1×{P_real:.1f})  
-         = {score:.2f}
---------------------------------------------------
-"""
-            all_debug_logs += log + "\n"
-
+        # ✅ 전체 자치구 디버깅 로그
+        all_debug_logs = "\n".join([
+            format_debug_log(row, ymd) for _, row in merged_all.iterrows()
+        ])
         st.download_button(
             label="📥 전체 자치구 디버깅 로그 다운로드",
             data=all_debug_logs.encode("utf-8-sig"),
@@ -443,23 +472,6 @@ with tab3:
             mime="text/plain"
         )
 
-        with st.expander("📘 피해점수 구성 요소 안내"):
-            st.markdown("""
-> 🧓 **S (사회적 취약성 지수)**  
-고령자, 야외 근로자, 열에 취약한 인구의 비율을 반영한 지수입니다.
-
-> 🌍 **E (환경적 취약성 지수)**  
-열섬 현상, 녹지율, 냉방 보급률 등을 표준화하여 반영한 지수입니다.
-
-> 📈 **예측환자수**  
-서울시 전체 예측 환자 수를 그대로 사용하며, 모든 자치구에 동일하게 적용됩니다. (25명 기준으로 정규화, 최대 1.0)
-
-> 📉 **실제환자수**  
-1명 이상 발생 시 1.0, 그렇지 않으면 0.0으로 계산됩니다.
-
-> 🧮 **피해점수 계산식**  
-피해점수 = 100 × (0.4 × S + 0.3 × E + 0.2 × P_pred + 0.1 × P_real)
-""")
-
     except Exception as e:
-        st.error(f"❌ 분석 실패: {e}")
+        st.error(f"❌ 처리 중 오류가 발생했습니다: {e}")
+
