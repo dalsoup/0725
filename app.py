@@ -27,9 +27,6 @@ GITHUB_FILENAME = "ML_asos_dataset.csv"
 st.title("HeatAI")
 tab1, tab2, tab3 = st.tabs(["📊 폭염 예측 및 위험도 분석", "📥 실제 피해 기록 및 데이터 입력", "📍 자치구별 피해점수 및 보상 분석"])
 
-# ====================================================================
-# 🔮 예측 탭
-# ====================================================================
 with tab1:
     # ✅ 사용법 안내
     with st.expander("📊 tab1에서 입력된 정보는 이렇게 활용됩니다"):
@@ -145,6 +142,36 @@ with tab1:
         df_total.to_csv(SAVE_FILE, index=False, encoding="utf-8-sig")
 
         st.success(f"✅ 예측값이 '{SAVE_FILE}'에 저장되었습니다.")
+
+        # 🔁 GitHub에 예측값 자동 저장
+        with open(SAVE_FILE, "rb") as f:
+            content = f.read()
+        b64_content = base64.b64encode(content).decode("utf-8")
+
+        api_url = f"https://api.github.com/repos/{GITHUB_USERNAME}/{GITHUB_REPO}/contents/{SAVE_FILE}"
+        r = requests.get(api_url, headers={"Authorization": f"Bearer {GITHUB_TOKEN}"})
+        sha = r.json().get("sha") if r.status_code == 200 else None
+
+        payload = {
+            "message": f"[tab1] {date_selected} 예측값 업데이트",
+            "content": b64_content,
+            "branch": GITHUB_BRANCH
+        }
+        if sha:
+            payload["sha"] = sha
+
+        headers = {
+            "Authorization": f"Bearer {GITHUB_TOKEN}",
+            "Accept": "application/vnd.github+json"
+        }
+        r = requests.put(api_url, headers=headers, json=payload)
+
+        if r.status_code in [200, 201]:
+            st.success("✅ GitHub에 예측값 저장 완료")
+            st.info(f"🔗 [GitHub에서 확인하기](https://github.com/{GITHUB_USERNAME}/{GITHUB_REPO}/blob/{GITHUB_BRANCH}/{SAVE_FILE})")
+        else:
+            st.warning(f"⚠️ GitHub 저장 실패: {r.status_code} / {r.text[:200]}")
+
 
 with tab2:
     # ✅ 사용법 안내
@@ -384,6 +411,17 @@ with tab3:
                 continue
         raise UnicodeDecodeError(f"❌ 인코딩 실패: {path}")
 
+    def load_csv_from_github(filename):
+    try:
+        github_url = f"https://raw.githubusercontent.com/{GITHUB_USERNAME}/{GITHUB_REPO}/{GITHUB_BRANCH}/{filename}"
+        r = requests.get(github_url)
+        r.raise_for_status()
+        return pd.read_csv(io.StringIO(r.text), encoding="utf-8-sig")
+    except Exception as e:
+        st.error(f"❌ GitHub에서 {filename} 불러오기 실패: {e}")
+        return pd.DataFrame()  # 빈 데이터프레임 반환 시 예외처리 가능
+
+
     # ✅ 메인 실행
     try:
         col1, col2 = st.columns(2)
@@ -393,9 +431,11 @@ with tab3:
         with col2:
             selected_gu = None
 
-        ml_data = load_csv_with_fallback("ML_asos_dataset.csv")
+        ml_data = load_csv_from_github("ML_asos_dataset.csv")
+        if ml_data.empty:
+            st.warning("❗️기록된 학습 데이터가 없습니다. tab2에서 데이터를 먼저 저장해주세요.")
+            st.stop()
         ml_data = ml_data[ml_data["일자"] == ymd]
-
         static_data = load_csv_with_fallback("seoul_static_data.csv")
         merged_all = pd.merge(static_data, ml_data, on="자치구", how="left")
 
@@ -403,7 +443,7 @@ with tab3:
             st.warning("❗️선택한 날짜의 데이터가 없습니다.")
             st.stop()
 
-        df_total = load_csv_with_fallback("ML_asos_total_prediction.csv")
+        df_total = load_csv_from_github("ML_asos_total_prediction.csv")
         pred_row = df_total[df_total["일자"] == ymd]
 
         if pred_row.empty:
