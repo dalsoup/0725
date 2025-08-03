@@ -65,7 +65,7 @@ with tab1:
     )
 
     if st.button("🔍 예측하기", key="predict_tab1"):
-    today = datetime.date.today() 
+        today = datetime.date.today() 
         # ✅ 기상 데이터 불러오기
         if date_selected >= today:
             weather, base_date, base_time = get_weather(region, date_selected, KMA_API_KEY)
