@@ -412,14 +412,14 @@ with tab3:
         raise UnicodeDecodeError(f"❌ 인코딩 실패: {path}")
 
     def load_csv_from_github(filename):
-    try:
-        github_url = f"https://raw.githubusercontent.com/{GITHUB_USERNAME}/{GITHUB_REPO}/{GITHUB_BRANCH}/{filename}"
-        r = requests.get(github_url)
-        r.raise_for_status()
-        return pd.read_csv(io.StringIO(r.text), encoding="utf-8-sig")
-    except Exception as e:
-        st.error(f"❌ GitHub에서 {filename} 불러오기 실패: {e}")
-        return pd.DataFrame()  # 빈 데이터프레임 반환 시 예외처리 가능
+        try:
+            github_url =   f"https://raw.githubusercontent.com/{GITHUB_USERNAME}/{GITHUB_REPO}/{GITHUB_BRANCH}/{filename}"
+            r = requests.get(github_url)
+            r.raise_for_status()
+            return pd.read_csv(io.StringIO(r.text), encoding="utf-8-sig")
+        except Exception as e:
+            st.error(f"❌ GitHub에서 {filename} 불러오기 실패: {e}")
+            return pd.DataFrame()
 
 
     # ✅ 메인 실행
