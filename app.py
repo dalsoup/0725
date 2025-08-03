@@ -4,6 +4,7 @@ import datetime
 import requests
 import os
 import base64
+import io
 from urllib.parse import unquote
 
 from utils import (
