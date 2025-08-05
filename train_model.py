@@ -8,7 +8,7 @@ from sklearn.metrics import mean_squared_error, r2_score
 from model_utils import predict_from_weather
 
 # ✅ 파일 경로
-STATIC_FILE = "ML_static_dataset.csv"   # ← CSV로 변경됨
+STATIC_FILE = "ML_static_dataset.csv"  
 DYNAMIC_FILE = "ML_asos_dataset.csv"
 MODEL_FILE = "trained_model.pkl"
 FEATURE_FILE = "feature_names.pkl"
