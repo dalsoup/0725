@@ -14,7 +14,7 @@ from utils import (
     get_weather, get_asos_weather, get_risk_level,
     calculate_avg_temp, region_to_stn_id
 )
-from model_utils import predict_from_weather
+from model_utils import predict_from_weather, compute_kma_heat_index
 
 # ----------------------- 📦 설정 -----------------------
 st.set_page_config(layout="centered")
@@ -94,7 +94,7 @@ with tab1:
         tmx = weather.get("TMX", 0)
         tmn = weather.get("TMN", 0)
         reh = weather.get("REH", 0)
-        heat_index = compute_heat_index(tmx, reh)
+        heat_index = compute_kma_heat_index(tmx, reh)
 
         pred, avg_temp, input_df = predict_from_weather(tmx, tmn, reh)
         risk = get_risk_level(pred)
