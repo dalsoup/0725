@@ -267,47 +267,64 @@ with tab2:
             st.markdown("#### ✅ 저장될 학습 데이터 미리보기")
             st.dataframe(preview_df)
 
-            if st.button("💾 GitHub에 저장하기", key="save_tab2_multi"):
-                csv_path = "ML_asos_dataset_by_gu.csv"
+            if st.button("💾 GitHub에 저장하고 모델 재학습하기", key="save_and_train_tab2"):
+                csv_path = "ML_asos_dataset.csv"
+
                 if os.path.exists(csv_path):
                     try:
                         existing = pd.read_csv(csv_path, encoding="utf-8-sig")
                     except UnicodeDecodeError:
                         existing = pd.read_csv(csv_path, encoding="cp949")
-                    for row in preview_list:
-                        existing = existing[~((existing["일자"] == row["일자"]) & (existing["자치구"] == row["자치구"]))]
-                    df_all = pd.concat([existing, preview_df], ignore_index=True)
                 else:
-                    df_all = preview_df
+                    existing = pd.DataFrame()
 
+                merge_keys = ["일자", "자치구"]
+                if not existing.empty:
+                    existing = existing[~existing.set_index(merge_keys).index.isin(preview_df.set_index(merge_keys).index)]
+                df_all = pd.concat([existing, preview_df], ignore_index=True)
                 df_all.to_csv(csv_path, index=False, encoding="utf-8-sig")
+                st.success("✅ 학습 데이터 저장 완료 (로컬)")
 
-                with open(csv_path, "rb") as f:
-                    content = f.read()
-                b64_content = base64.b64encode(content).decode("utf-8")
+                try:
+                    with open(csv_path, "rb") as f:
+                        content = f.read()
+                    b64_content = base64.b64encode(content).decode("utf-8")
 
-                api_url = f"https://api.github.com/repos/{GITHUB_USERNAME}/{GITHUB_REPO}/contents/{GITHUB_FILENAME}"
-                r = requests.get(api_url, headers={"Authorization": f"Bearer {GITHUB_TOKEN}"})
-                sha = r.json().get("sha") if r.status_code == 200 else None
+                    api_url = f"https://api.github.com/repos/{GITHUB_USERNAME}/{GITHUB_REPO}/contents/{GITHUB_FILENAME}"
+                    r = requests.get(api_url, headers={"Authorization": f"Bearer {GITHUB_TOKEN}"})
+                    sha = r.json().get("sha") if r.status_code == 200 else None
 
-                payload = {
-                    "message": f"Update {GITHUB_FILENAME} with new data for {region} ({len(preview_list)} entries)",
-                    "content": b64_content,
-                    "branch": GITHUB_BRANCH
-                }
-                if sha:
-                    payload["sha"] = sha
+                    payload = {
+                        "message": f"Update {GITHUB_FILENAME} with new data for {region} ({len(preview_list)} entries)",
+                        "content": b64_content,
+                        "branch": GITHUB_BRANCH
+                    }
+                    if sha:
+                        payload["sha"] = sha
 
-                headers = {
-                    "Authorization": f"Bearer {GITHUB_TOKEN}",
-                    "Accept": "application/vnd.github+json"
-                }
-                r = requests.put(api_url, headers=headers, json=payload)
-                if r.status_code in [200, 201]:
-                    st.success("✅ GitHub 저장 완료")
-                    st.info(f"🔗 [GitHub에서 보기](https://github.com/{GITHUB_USERNAME}/{GITHUB_REPO}/blob/{GITHUB_BRANCH}/{GITHUB_FILENAME})")
-                else:
-                    st.warning(f"⚠️ GitHub 저장 실패: {r.status_code} {r.text[:200]}")
+                    headers = {
+                        "Authorization": f"Bearer {GITHUB_TOKEN}",
+                        "Accept": "application/vnd.github+json"
+                    }
+                    r = requests.put(api_url, headers=headers, json=payload)
+                    if r.status_code in [200, 201]:
+                        st.success("✅ GitHub 저장 완료")
+                        st.info(f"🔗 [GitHub에서 보기](https://github.com/{GITHUB_USERNAME}/{GITHUB_REPO}/blob/{GITHUB_BRANCH}/{GITHUB_FILENAME})")
+                    else:
+                        st.warning(f"⚠️ GitHub 저장 실패: {r.status_code} {r.text[:200]}")
+
+                except Exception as e:
+                    st.error(f"❌ 처리 중 오류 발생: {e}")
+                    st.stop()
+
+                st.info("📈 머신러닝 모델 재학습 중입니다...")
+                try:
+                    result = subprocess.run(["python", "train_model.py"], capture_output=True, text=True, check=True)
+                    st.success("✅ 모델 재학습 완료")
+                    st.text_area("📄 학습 로그", result.stdout, height=300)
+                except subprocess.CalledProcessError as e:
+                    st.error("❌ 모델 학습 실패")
+                    st.text_area("🚨 오류 로그", e.stderr or str(e), height=300)
 
         except Exception as e:
             st.error(f"❌ 처리 중 오류 발생: {e}")
