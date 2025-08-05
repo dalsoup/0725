@@ -4,7 +4,7 @@ import os
 from xgboost import XGBRegressor
 from sklearn.metrics import mean_squared_error, r2_score
 
-# ✅ 추론 함수 불러오기
+# ✅ 추론 함수
 from model_utils import predict_from_weather
 
 # ✅ 파일 경로
@@ -16,7 +16,7 @@ FEATURE_FILE = "feature_names.pkl"
 print("📂 현재 디렉토리:", os.getcwd())
 print("📄 파일 목록:", os.listdir())
 
-# ✅ 정적 데이터 로드
+# ✅ 정적 데이터 로드 및 전처리
 if not os.path.exists(STATIC_FILE):
     print(f"❌ 정적 데이터 파일이 없습니다: {STATIC_FILE}")
     exit(1)
@@ -24,7 +24,23 @@ if not os.path.exists(STATIC_FILE):
 df_static = pd.read_excel(STATIC_FILE)
 print(f"✅ 정적 데이터 로드 완료: {df_static.shape}")
 
-# ✅ 동적 데이터 로드 (선택적)
+# 🔧 '일자' 처리
+if '일시' in df_static.columns and pd.api.types.is_numeric_dtype(df_static['일시']):
+    df_static['일자'] = pd.to_datetime('1899-12-30') + pd.to_timedelta(df_static['일시'], unit='D')
+    df_static['일자'] = df_static['일자'].dt.strftime('%Y-%m-%d')
+elif '일시' in df_static.columns:
+    df_static['일자'] = pd.to_datetime(df_static['일시'], errors='coerce').dt.strftime('%Y-%m-%d')
+
+# 🔧 '지역' 통일
+for col in ['광역자치단체', '지역', '시도']:
+    if col in df_static.columns:
+        df_static['지역'] = df_static[col]
+        break
+
+# 🔧 사용 안하는 열 제거
+df_static = df_static.drop(columns=[col for col in ['일시', '광역자치단체', '시도'] if col in df_static.columns])
+
+# ✅ 동적 데이터 로드 (선택)
 if os.path.exists(DYNAMIC_FILE):
     try:
         df_dynamic = pd.read_csv(DYNAMIC_FILE, encoding="utf-8-sig")
@@ -41,9 +57,9 @@ print(f"📊 결합 후 전체 행 수: {len(df)}")
 # ✅ 열 이름 정제
 df.columns = df.columns.str.strip().str.replace('\n', '').str.replace(' ', '')
 
-# ✅ 결측치 제거 대상 열 지정
+# ✅ 결측치 제거 대상
 required_columns = [
-    '일자', '지역', '최고체감온도(°C)', '최고기온(°C)', 
+    '일자', '지역', '최고체감온도(°C)', '최고기온(°C)',
     '평균기온(°C)', '최저기온(°C)', '평균상대습도(%)', '환자수'
 ]
 print("\n📌 결측치 개수:")
@@ -52,7 +68,7 @@ print(df[required_columns].isna().sum())
 df = df.dropna(subset=required_columns)
 print("🧹 결측치 제거 후 행 수:", len(df))
 
-# ✅ 집계 (일자+지역 단위)
+# ✅ 집계
 grouped = df.groupby(['일자', '지역']).agg({
     '최고체감온도(°C)': 'mean',
     '최고기온(°C)': 'mean',
@@ -65,7 +81,7 @@ print(f"📊 집계 완료: {grouped.shape}")
 
 # ✅ 피처 및 타겟 정의
 features = [
-    '최고체감온도(°C)', '최고기온(°C)', '평균기온(°C)', 
+    '최고체감온도(°C)', '최고기온(°C)', '평균기온(°C)',
     '최저기온(°C)', '평균상대습도(%)'
 ]
 target = '환자수'
@@ -91,7 +107,7 @@ model.fit(X, y)
 y_pred = model.predict(X)
 r2 = r2_score(y, y_pred)
 mse = mean_squared_error(y, y_pred)
-rmse = mse ** 0.5  # 🔧 여기서 수정됨
+rmse = mse ** 0.5  # scikit-learn 호환성 대응
 
 print("\n📈 모델 성능 평가")
 print(f"  - R²: {r2:.4f}")
