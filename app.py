@@ -6,6 +6,7 @@ import os
 import base64
 import io
 from urllib.parse import unquote
+import subprocess
 
 from utils import (
     get_weather, get_asos_weather, get_risk_level,
