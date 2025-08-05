@@ -173,7 +173,6 @@ with tab1:
         else:
             st.warning(f"⚠️ GitHub 저장 실패: {r.status_code} / {r.text[:200]}")
 
-
 with tab2:
     # ✅ 사용법 안내
     with st.expander("📊 tab2에서 입력된 정보는 이렇게 활용됩니다"):
@@ -195,32 +194,20 @@ with tab2:
         입력된 데이터는 자동으로 내부 DB에 기록되어 다른 탭에서 즉시 활용됩니다.
         """)
 
-    # ✅ 광역시도 선택 (현재는 서울만)
-    region = st.selectbox(
-        "🌐 광역시도 선택", 
-        ["서울특별시"], 
-        key="region_tab2"
-    )
+    region = st.selectbox("🌐 광역시도 선택", ["서울특별시"], key="region_tab2")
 
-    # ✅ 자치구 선택
     all_gus = [
         '종로구', '중구', '용산구', '성동구', '광진구', '동대문구', '중랑구', '성북구', '강북구', '도봉구',
         '노원구', '은평구', '서대문구', '마포구', '양천구', '강서구', '구로구', '금천구', '영등포구',
         '동작구', '관악구', '서초구', '강남구', '송파구', '강동구'
     ]
-    gus = st.multiselect(
-        "🏘️ 자치구 선택 (선택하지 않으면 전체)", 
-        all_gus, 
-        key="gu_tab2_multi"
-    )
+    gus = st.multiselect("🏘️ 자치구 선택 (선택하지 않으면 전체)", all_gus, key="gu_tab2_multi")
     if not gus:
         gus = all_gus
 
-    # ✅ 기록 가능한 날짜 범위: 2025-07-01 ~ 오늘 하루 전
     min_record_date = datetime.date(2025, 7, 1)
     max_record_date = datetime.date.today() - datetime.timedelta(days=1)
 
-    # ✅ 단일 날짜 선택 UI
     date_selected = st.date_input(
         "📅 저장할 날짜 선택", 
         value=max_record_date, 
@@ -245,34 +232,32 @@ with tab2:
             df_long["지역"] = "서울특별시"
 
             preview_list = []
+            ymd = date_selected.strftime("%Y-%m-%d")
 
-            for date_selected in dates_selected:
-                ymd = date_selected.strftime("%Y-%m-%d")
+            weather = get_asos_weather(region, ymd.replace("-", ""), ASOS_API_KEY)
+            tmx = weather.get("TMX", 0)
+            tmn = weather.get("TMN", 0)
+            reh = weather.get("REH", 0)
+            avg_temp = calculate_avg_temp(tmx, tmn)
 
-                weather = get_asos_weather(region, ymd.replace("-", ""), ASOS_API_KEY)
-                tmx = weather.get("TMX", 0)
-                tmn = weather.get("TMN", 0)
-                reh = weather.get("REH", 0)
-                avg_temp = calculate_avg_temp(tmx, tmn)
+            for gu in gus:
+                selected = df_long[(df_long["일자"] == ymd) & (df_long["자치구"] == gu)]
+                if selected.empty:
+                    st.warning(f"❌ {ymd} {gu} 환자수 데이터가 없습니다.")
+                    continue
 
-                for gu in gus:
-                    selected = df_long[(df_long["일자"] == ymd) & (df_long["자치구"] == gu)]
-                    if selected.empty:
-                        st.warning(f"❌ {ymd} {gu} 환자수 데이터가 없습니다.")
-                        continue
-
-                    환자수 = int(selected["환자수"].values[0])
-                    preview_list.append({
-                        "일자": ymd,
-                        "지역": region,
-                        "자치구": gu,
-                        "최고체감온도(°C)": tmx + 1.5,
-                        "최고기온(°C)": tmx,
-                        "평균기온(°C)": avg_temp,
-                        "최저기온(°C)": tmn,
-                        "평균상대습도(%)": reh,
-                        "환자수": 환자수
-                    })
+                환자수 = int(selected["환자수"].values[0])
+                preview_list.append({
+                    "일자": ymd,
+                    "지역": region,
+                    "자치구": gu,
+                    "최고체감온도(°C)": tmx + 1.5,
+                    "최고기온(°C)": tmx,
+                    "평균기온(°C)": avg_temp,
+                    "최저기온(°C)": tmn,
+                    "평균상대습도(%)": reh,
+                    "환자수": 환자수
+                })
 
             if not preview_list:
                 st.warning("❌ 선택한 날짜와 자치구 조합에 저장할 데이터가 없습니다.")
