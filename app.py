@@ -133,13 +133,14 @@ with tab1:
         last_year_count = get_last_year_patient_count(date_selected, region)
         if last_year_count is not None:
             delta = pred - last_year_count
+            st.markdown(
             f"📅 **전년도({(date_selected - datetime.timedelta(days=365)).strftime('%Y-%m-%d')}) 동일 날짜 환자수**: "
         f"**{last_year_count}명**"
     )
             st.markdown(
         f"📈 **전년 대비 증감**: {'+' if delta >= 0 else ''}{delta:.1f}명"
     )
-         else:
+        else:
               st.info("ℹ️ 전년도 동일 날짜의 환자 수 데이터를 찾을 수 없습니다.")
 
         # ✅ 예측값 CSV로 저장 (tab3에서 활용)
