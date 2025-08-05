@@ -33,6 +33,7 @@ def predict_from_weather(tmx, tmn, reh, wind):
         "평균기온(°C)": avg_temp,
         "최저기온(°C)": tmn,
         "평균상대습도(%)": reh
+        "풍속(m/s)": wind 
     }])
     X = input_df[feature_names]
     pred = model.predict(X)[0]
