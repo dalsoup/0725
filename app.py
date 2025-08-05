@@ -12,7 +12,7 @@ import sys
 
 from utils import (
     get_weather, get_asos_weather, get_risk_level,
-    calculate_avg_temp, region_to_stn_id
+    calculate_avg_temp, region_to_stn_id, compute_heat_index
 )
 from model_utils import predict_from_weather
 
@@ -35,20 +35,20 @@ with tab1:
     # ✅ 사용법 안내
     with st.expander("📊 tab1에서 입력된 정보는 이렇게 활용됩니다"):
         st.markdown("""
-        1. 기상청의 **단기예보 API를 통해 자동으로 수집된 날씨 정보**(기온, 습도 등)를 바탕으로,  
-           AI가 선택한 지역의 **예측 온열질환자 수**를 산출합니다.
+        1. 기상청의 단기예보 API를 통해 자동으로 수집된 기상 정보를 바탕으로,  
+           AI가 선택한 지역의 예측 온열질환자 수를 산출합니다.
 
-        2. 예측 모델은 **4개년 7,8월의 실제 기상 조건과 온열질환자 수** 데이터를 학습했습니다.  
+        2. 예측 모델은 4개년 7,8월의 실제 기상 조건과 온열질환자 수 데이터를 학습했습니다.  
            현재 입력된 기상 조건이 과거 어떤 날과 유사한지를 바탕으로  
-           **AI가 발생 가능성이 높은 환자 수를 추정**합니다.
+           AI가 발생 가능성이 높은 환자 수를 추정합니다.
 
-        3. 예측된 환자 수는 **위험도 등급(🟢~🔥)**으로 변환되어 시민에게 전달되며,  
-           tab3의 **자치구별 피해점수 계산에 활용되는 입력값(P_pred)**으로도 사용됩니다.
+        3. 예측된 환자 수는 위험도 등급(🟢~🔥)으로 변환되어 시민에게 전달되며,  
+           tab3의 자치구별 피해점수 계산에 활용되는 입력값(P_pred)으로도 사용됩니다.
 
-        📍 기상청 예보는 **지점 단위(광역시도)** 기준으로 제공되므로,  
-        현재는 **자치구 단위가 아닌 광역시도 단위로만 예측이 가능합니다.**
+        📍 기상청 예보는 지점 단위(광역시도) 기준으로 제공되므로,  
+        현재는 자치구 단위가 아닌 광역시도 단위로만 예측이 가능합니다.
 
-        📅 예측 가능한 날짜는 **2025년 7월 1일부터 8월 31일까지**입니다.
+        📅 예측 가능한 날짜는 2025년 7월 1일부터 8월 31일까지입니다.
         """)
 
     # ✅ 날짜 선택 범위 설정: 2025-07-01 ~ 2025-08-31
@@ -84,17 +84,12 @@ with tab1:
         tmn = weather.get("TMN", 0)
         reh = weather.get("REH", 0)
 
+        # ✅ 체감온도 계산
+        heat_index = compute_heat_index(tmx, reh)
+
         # ✅ 예측 수행
         pred, avg_temp, input_df = predict_from_weather(tmx, tmn, reh)
         risk = get_risk_level(pred)
-
-        # ✅ 기상 정보 출력
-        st.markdown("#### ☁️ 기상정보")
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric("최고기온", f"{tmx:.1f}℃")
-        col2.metric("최저기온", f"{tmn:.1f}℃")
-        col3.metric("평균기온", f"{avg_temp:.1f}℃")
-        col4.metric("습도", f"{reh:.1f}%")
 
         with st.expander("🧪 입력값 확인"):
             st.dataframe(input_df)
@@ -107,30 +102,50 @@ with tab1:
 
         # ✅ 전년도 환자수 비교
         def get_last_year_patient_count(current_date, region, static_file="ML_7_8월_2021_2025_dataset.xlsx"):
-            try:
-                last_year_date = current_date - datetime.timedelta(days=365)
-                df_all = pd.read_excel(static_file, engine="openpyxl")
-                df_all["일시"] = pd.to_datetime("1899-12-30") + pd.to_timedelta(df_all["일시"], unit="D")
-                df_all["일자"] = df_all["일시"].dt.strftime("%Y-%m-%d")
-                cond = (df_all["일자"] == last_year_date.strftime("%Y-%m-%d")) & (df_all["광역자치단체"] == region)
-                row = df_all[cond]
-                if not row.empty:
-                    return int(row["환자수"].values[0])
-                else:
-                    return None
-            except:
-                return None
+    try:
+        # 작년 동일 날짜 계산
+        last_year_date = (current_date - datetime.timedelta(days=365)).strftime("%Y-%m-%d")
 
+        # 엑셀 로드 (날짜 컬럼이 '일자' 또는 '일시' 여부 확인)
+        df_all = pd.read_excel(static_file, engine="openpyxl")
+
+        # 엑셀이 float 형태로 날짜 저장한 경우 변환
+        if "일시" in df_all.columns and pd.api.types.is_numeric_dtype(df_all["일시"]):
+            df_all["일시"] = pd.to_datetime("1899-12-30") + pd.to_timedelta(df_all["일시"], unit="D")
+            df_all["일자"] = df_all["일시"].dt.strftime("%Y-%m-%d")
+        elif "일자" not in df_all.columns and "일시" in df_all.columns:
+            df_all["일자"] = pd.to_datetime(df_all["일시"]).dt.strftime("%Y-%m-%d")
+
+        # 조건 설정
+        cond = (df_all["일자"] == last_year_date) & (df_all["광역자치단체"] == region)
+        row = df_all[cond]
+
+        # 환자수 반환
+        if not row.empty:
+            return int(row["환자수"].values[0])
+        else:
+            return None
+    except Exception as e:
+        st.warning(f"⚠️ 작년 환자수 불러오기 오류: {e}")
+        return None
+
+        # ✅ 작년 동일 날짜 환자수 불러오기 및 비교
         last_year_count = get_last_year_patient_count(date_selected, region)
         if last_year_count is not None:
             delta = pred - last_year_count
-            st.markdown(f"📅 **전년도({(date_selected - datetime.timedelta(days=365)).strftime('%Y-%m-%d')}) 동일 날짜 환자수**: **{last_year_count}명**")
-            st.markdown(f"📈 **전년 대비 증감**: {'+' if delta >= 0 else ''}{delta:.1f}명")
-        else:
-            st.markdown("전년도 동일 날짜의 환자 수 데이터를 찾을 수 없습니다.")
+            f"📅 **전년도({(date_selected - datetime.timedelta(days=365)).strftime('%Y-%m-%d')}) 동일 날짜 환자수**: "
+        f"**{last_year_count}명**"
+    )
+            st.markdown(
+        f"📈 **전년 대비 증감**: {'+' if delta >= 0 else ''}{delta:.1f}명"
+    )
+         else:
+              st.info("ℹ️ 전년도 동일 날짜의 환자 수 데이터를 찾을 수 없습니다.")
 
         # ✅ 예측값 CSV로 저장 (tab3에서 활용)
         SAVE_FILE = "ML_asos_total_prediction.csv"
+        today_str = date_selected.strftime("%Y-%m-%d")
+
         try:
             df_total = pd.read_csv(SAVE_FILE, encoding="utf-8-sig")
         except FileNotFoundError:
@@ -141,7 +156,6 @@ with tab1:
             "서울시예측환자수": round(pred, 2)
         }])
 
-        df_total = df_total[df_total["일자"] != new_row.iloc[0]["일자"]]
         df_total = pd.concat([df_total, new_row], ignore_index=True)
         df_total.to_csv(SAVE_FILE, index=False, encoding="utf-8-sig")
 
@@ -242,6 +256,7 @@ with tab2:
             tmn = weather.get("TMN", 0)
             reh = weather.get("REH", 0)
             avg_temp = calculate_avg_temp(tmx, tmn)
+            heat_index = compute_heat_index(tmx, reh)
 
             for gu in gus:
                 selected = df_long[(df_long["일자"] == ymd) & (df_long["자치구"] == gu)]
@@ -254,7 +269,7 @@ with tab2:
                     "일자": ymd,
                     "지역": region,
                     "자치구": gu,
-                    "최고체감온도(°C)": tmx + 1.5,
+                    "최고체감온도(°C)": heat_index,
                     "최고기온(°C)": tmx,
                     "평균기온(°C)": avg_temp,
                     "최저기온(°C)": tmn,
