@@ -32,6 +32,14 @@ st.title("HeatAI")
 tab1, tab2, tab3 = st.tabs(["📊 폭염 예측 및 위험도 분석", "📥 실제 피해 기록 및 데이터 입력", "📍 자치구별 피해점수 및 보상 분석"])
 
 with tab1:
+    def read_csv_with_fallback(path):
+        for enc in ["utf-8-sig", "cp949", "euc-kr"]:
+            try:
+                return pd.read_csv(path, encoding=enc)
+            except UnicodeDecodeError:
+                continue
+        raise UnicodeDecodeError(f"❌ 인코딩 실패: {path}")
+
     def get_last_year_patient_count(current_date, region):
         try:
             last_year_date = (current_date - datetime.timedelta(days=365)).strftime("%Y-%m-%d")
