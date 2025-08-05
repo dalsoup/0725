@@ -101,7 +101,7 @@ with tab1:
         pred, avg_temp, input_df = predict_from_weather(tmx, tmn, reh, wind)
         risk = get_risk_level(pred)
 
-        with st.expander("입력값 확인"):
+        with st.expander("🧪 입력값 확인"):
             st.dataframe(input_df)
 
         st.markdown("#### 💡 예측 결과")
