@@ -32,6 +32,24 @@ st.title("HeatAI")
 tab1, tab2, tab3 = st.tabs(["📊 폭염 예측 및 위험도 분석", "📥 실제 피해 기록 및 데이터 입력", "📍 자치구별 피해점수 및 보상 분석"])
 
 with tab1:
+    def get_last_year_patient_count(current_date, region, static_file="ML_7_8월_2021_2025_dataset.xlsx"):
+        try:
+            last_year_date = (current_date - datetime.timedelta(days=365)).strftime("%Y-%m-%d")
+            df_all = pd.read_excel(static_file, engine="openpyxl")
+
+            if "일시" in df_all.columns and pd.api.types.is_numeric_dtype(df_all["\uc77c\uc2dc"]):
+                df_all["\uc77c\uc2dc"] = pd.to_datetime("1899-12-30") + pd.to_timedelta(df_all["\uc77c\uc2dc"], unit="D")
+                df_all["\uc77c\uc790"] = df_all["\uc77c\uc2dc"].dt.strftime("%Y-%m-%d")
+            elif "일자" not in df_all.columns and "일시" in df_all.columns:
+                df_all["\uc77c\uc790"] = pd.to_datetime(df_all["\uc77c\uc2dc"]).dt.strftime("%Y-%m-%d")
+
+            cond = (df_all["\uc77c\uc790"] == last_year_date) & (df_all["\uad11\uc5ed\uc790\uce58\ub2e8\uccb4"] == region)
+            row = df_all[cond]
+            return int(row["\ud658\uc790\uc218"].values[0]) if not row.empty else None
+
+        except Exception as e:
+            st.warning(f"⚠️ 작년 환자수 불러오기 오류: {e}")
+            return None
     # ✅ 사용법 안내
     with st.expander("📊 tab1에서 입력된 정보는 이렇게 활용됩니다"):
         st.markdown("""
