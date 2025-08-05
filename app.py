@@ -96,7 +96,7 @@ with tab1:
         reh = weather.get("REH", 0)
         heat_index = compute_heat_index(tmx, reh)
 
-        pred, avg_temp, input_df = predict_from_weather(tmx, tmn, reh)
+        pred, avg_temp, input_df = predict_from_weather(tmx, tmn, reh, heat_index)
         risk = get_risk_level(pred)
 
         with st.expander("입력값 확인"):
