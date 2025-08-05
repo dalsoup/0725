@@ -12,7 +12,7 @@ import sys
 
 from utils import (
     get_weather, get_asos_weather, get_risk_level,
-    calculate_avg_temp, region_to_stn_id, compute_heat_index
+    calculate_avg_temp, region_to_stn_id
 )
 from model_utils import predict_from_weather
 
@@ -96,7 +96,7 @@ with tab1:
         reh = weather.get("REH", 0)
         heat_index = compute_heat_index(tmx, reh)
 
-        pred, avg_temp, input_df = predict_from_weather(tmx, tmn, reh, heat_index)
+        pred, avg_temp, input_df = predict_from_weather(tmx, tmn, reh)
         risk = get_risk_level(pred)
 
         with st.expander("입력값 확인"):
@@ -224,7 +224,7 @@ with tab2:
             tmn = weather.get("TMN", 0)
             reh = weather.get("REH", 0)
             avg_temp = calculate_avg_temp(tmx, tmn)
-            heat_index = compute_heat_index(tmx, reh)
+            heat_index = compute_kma_heat_index(tmx, reh)
 
             for gu in gus:
                 selected = df_long[(df_long["일자"] == ymd) & (df_long["자치구"] == gu)]
