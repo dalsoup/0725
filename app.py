@@ -14,7 +14,7 @@ from utils import (
     get_weather, get_asos_weather, get_risk_level,
     calculate_avg_temp, region_to_stn_id
 )
-from model_utils import predict_from_weather, compute_kma_heat_index
+from model_utils import predict_from_weather
 
 # ----------------------- 📦 설정 -----------------------
 st.set_page_config(layout="centered")
