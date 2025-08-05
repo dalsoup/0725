@@ -222,9 +222,7 @@ with tab2:
             tmx = weather.get("TMX", 0)
             tmn = weather.get("TMN", 0)
             reh = weather.get("REH", 0)
-            avg_temp = calculate_avg_temp(tmx, tmn)
-
-            heat_index = compute_heat_index_kma2022(tmx, reh)
+            avg_temp, heat_index, input_df = predict_from_weather(tmx, tmn, reh)
 
             for gu in gus:
                 selected = df_long[(df_long["일자"] == ymd) & (df_long["자치구"] == gu)]
