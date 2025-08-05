@@ -116,6 +116,27 @@ def get_asos_weather(region, ymd, ASOS_API_KEY):
     except:
         return {}
 
+def compute_heat_index(t_celsius, rh_percent):
+    """
+    기온(°C)과 상대습도(%) 기반 체감온도 계산 함수.
+    기온 < 27°C 또는 습도 < 40%일 경우, 실제 기온 반환.
+    """
+    if t_celsius < 27 or rh_percent < 40:
+        return round(t_celsius, 1)
+
+    t_f = t_celsius * 9 / 5 + 32
+    r = rh_percent
+
+    hi_f = (
+        -42.379 + 2.04901523 * t_f + 10.14333127 * r
+        - 0.22475541 * t_f * r - 6.83783e-3 * t_f ** 2
+        - 5.481717e-2 * r ** 2 + 1.22874e-3 * t_f ** 2 * r
+        + 8.5282e-4 * t_f * r ** 2 - 1.99e-6 * t_f ** 2 * r ** 2
+    )
+
+    hi_c = (hi_f - 32) * 5 / 9
+    return round(hi_c, 1)
+
 def get_risk_level(pred):
     if pred == 0: return "🟢 매우 낮음"
     elif pred <= 2: return "🟡 낮음"
