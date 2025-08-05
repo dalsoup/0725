@@ -8,7 +8,7 @@ from sklearn.metrics import mean_squared_error, r2_score
 from model_utils import predict_from_weather
 
 # ✅ 파일 경로
-STATIC_FILE = "ML_7_8월_2021_2025_dataset.xlsx"
+STATIC_FILE = "ML_static_dataset.csv"   # ← CSV로 변경됨
 DYNAMIC_FILE = "ML_asos_dataset.csv"
 MODEL_FILE = "trained_model.pkl"
 FEATURE_FILE = "feature_names.pkl"
@@ -16,15 +16,18 @@ FEATURE_FILE = "feature_names.pkl"
 print("📂 현재 디렉토리:", os.getcwd())
 print("📄 파일 목록:", os.listdir())
 
-# ✅ 정적 데이터 로드 및 전처리
+# ✅ 정적 데이터 로드 (CSV)
 if not os.path.exists(STATIC_FILE):
     print(f"❌ 정적 데이터 파일이 없습니다: {STATIC_FILE}")
     exit(1)
 
-df_static = pd.read_excel(STATIC_FILE)
+df_static = pd.read_csv(STATIC_FILE, encoding="utf-8-sig")
 print(f"✅ 정적 데이터 로드 완료: {df_static.shape}")
 
-# 🔧 '일자' 처리
+# 🔧 열 이름 정제
+df_static.columns = df_static.columns.str.strip().str.replace('\n', '').str.replace(' ', '')
+
+# 🔧 '일자' 생성
 if '일시' in df_static.columns and pd.api.types.is_numeric_dtype(df_static['일시']):
     df_static['일자'] = pd.to_datetime('1899-12-30') + pd.to_timedelta(df_static['일시'], unit='D')
     df_static['일자'] = df_static['일자'].dt.strftime('%Y-%m-%d')
@@ -37,10 +40,10 @@ for col in ['광역자치단체', '지역', '시도']:
         df_static['지역'] = df_static[col]
         break
 
-# 🔧 사용 안하는 열 제거
+# 🔧 불필요한 열 제거
 df_static = df_static.drop(columns=[col for col in ['일시', '광역자치단체', '시도'] if col in df_static.columns])
 
-# ✅ 동적 데이터 로드 (선택)
+# ✅ 동적 데이터 로드
 if os.path.exists(DYNAMIC_FILE):
     try:
         df_dynamic = pd.read_csv(DYNAMIC_FILE, encoding="utf-8-sig")
@@ -54,7 +57,7 @@ else:
 
 print(f"📊 결합 후 전체 행 수: {len(df)}")
 
-# ✅ 열 이름 정제
+# ✅ 열 이름 다시 정제 (전체 통일)
 df.columns = df.columns.str.strip().str.replace('\n', '').str.replace(' ', '')
 
 # ✅ 결측치 제거 대상
@@ -107,7 +110,7 @@ model.fit(X, y)
 y_pred = model.predict(X)
 r2 = r2_score(y, y_pred)
 mse = mean_squared_error(y, y_pred)
-rmse = mse ** 0.5  # scikit-learn 호환성 대응
+rmse = mse ** 0.5  # ✔ squared=False 사용 안 함 (버전 호환성)
 
 print("\n📈 모델 성능 평가")
 print(f"  - R²: {r2:.4f}")
