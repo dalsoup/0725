@@ -7,6 +7,8 @@ import base64
 import io
 from urllib.parse import unquote
 import subprocess
+import sys
+
 
 from utils import (
     get_weather, get_asos_weather, get_risk_level,
@@ -320,7 +322,7 @@ with tab2:
 
                 st.info("📈 머신러닝 모델 재학습 중입니다...")
                 try:
-                    result = subprocess.run(["python", "train_model.py"], capture_output=True, text=True, check=True)
+                    result = subprocess.run(["sys.executable", "train_model.py"], capture_output=True, text=True, check=True)
                     st.success("✅ 모델 재학습 완료")
                     st.text_area("📄 학습 로그", result.stdout, height=300)
                 except subprocess.CalledProcessError as e:
