@@ -20,7 +20,35 @@ region_to_latlon = {
     "경상남도": (35.4606, 128.2132), "제주특별자치도": (33.4996, 126.5312)
 }
 
-# ----------------------- 해당 함수 수정 -----------------------
+# ----------------------- 체감온도 산식 (기상청 2022 개정) -----------------------
+def compute_tw_stull(ta, rh):
+    try:
+        tw = (
+            ta * math.atan(0.151977 * math.sqrt(rh + 8.313659))
+            + math.atan(ta + rh)
+            - math.atan(rh - 1.67633)
+            + 0.00391838 * math.pow(rh, 1.5) * math.atan(0.023101 * rh)
+            - 4.686035
+        )
+        return round(tw, 3)
+    except:
+        return None
+
+def compute_heat_index_kma2022(ta, rh):
+    tw = compute_tw_stull(ta, rh)
+    if tw is None:
+        return None
+    heat_index = (
+        -0.2442
+        + 0.55399 * tw
+        + 0.45535 * ta
+        - 0.0022 * (tw ** 2)
+        + 0.00278 * tw * ta
+        + 3.0
+    )
+    return round(heat_index, 1)
+
+# ----------------------- 날씨 API 함수들 -----------------------
 def get_weather(region_name, target_date, KMA_API_KEY):
     latlon = region_to_latlon.get(region_name, (37.5665, 126.9780))
     nx, ny = convert_latlon_to_xy(*latlon)
@@ -44,12 +72,12 @@ def get_weather(region_name, target_date, KMA_API_KEY):
         if target_str not in df["fcstDate"].values:
             return {}, base_date, base_time
         df = df[df["fcstDate"] == target_str]
-        df = df[df["category"].isin(["T3H", "TMX", "TMN", "REH", "WSD"])]
+        df = df[df["category"].isin(["T3H", "TMX", "TMN", "REH"])]
         summary = {}
-        for cat in ["TMX", "TMN", "REH", "T3H", "WSD"]:
+        for cat in ["TMX", "TMN", "REH", "T3H"]:
             vals = df[df["category"] == cat]["fcstValue"].astype(float)
             if not vals.empty:
-                summary[cat] = vals.mean() if cat in ["REH", "T3H", "WSD"] else vals.iloc[0]
+                summary[cat] = vals.mean() if cat in ["REH", "T3H"] else vals.iloc[0]
         return summary, base_date, base_time
     except:
         return {}, base_date, base_time
@@ -74,8 +102,7 @@ def get_asos_weather(region, ymd, ASOS_API_KEY):
         return {
             "TMX": float(item["maxTa"]),
             "TMN": float(item["minTa"]),
-            "REH": float(item["avgRhm"]),
-            "WIND": float(item["avgWs"])  # 평균 풍속 추가
+            "REH": float(item["avgRhm"])
         }
     except:
         return {}
