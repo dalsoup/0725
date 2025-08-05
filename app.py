@@ -35,7 +35,7 @@ with tab1:
     def get_last_year_patient_count(current_date, region):
         try:
             last_year_date = (current_date - datetime.timedelta(days=365)).strftime("%Y-%m-%d")
-        static_file = "ML_static_dataset.csv"
+            static_file = "ML_static_dataset.csv"
             df_all = pd.read_csv(static_file, encoding="utf-8-sig")
 
             if "일시" in df_all.columns and pd.api.types.is_numeric_dtype(df_all["일시"]):
