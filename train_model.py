@@ -21,7 +21,7 @@ if not os.path.exists(STATIC_FILE):
     print(f"❌ 정적 데이터 파일이 없습니다: {STATIC_FILE}")
     exit(1)
 
-df_static = pd.read_csv(STATIC_FILE, encoding="utf-8-sig")
+df_static = pd.read_csv(STATIC_FILE, encoding="cp949")
 print(f"✅ 정적 데이터 로드 완료: {df_static.shape}")
 
 # 🔧 열 이름 정제
