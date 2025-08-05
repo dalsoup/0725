@@ -51,145 +51,115 @@ with tab1:
         📅 예측 가능한 날짜는 2025년 7월 1일부터 8월 31일까지입니다.
         """)
 
-    # ✅ 날짜 선택 범위 설정: 2025-07-01 ~ 2025-08-31
-    min_pred_date = datetime.date(2025, 7, 1)
-    max_pred_date = datetime.date(2025, 8, 31)
-
-    # ✅ 지역 및 날짜 선택
-    region = st.selectbox("지역 선택", list(region_to_stn_id.keys()), key="region_tab1")
-    date_selected = st.date_input(
-        "날짜 선택",
-        value=min_pred_date,
-        min_value=min_pred_date,
-        max_value=max_pred_date,
-        key="date_tab1"
-    )
-
-    if st.button("🔍 예측하기", key="predict_tab1"):
-        today = datetime.date.today() 
-        # ✅ 기상 데이터 불러오기
-        if date_selected >= today:
-            weather, base_date, base_time = get_weather(region, date_selected, KMA_API_KEY)
-        else:
-            ymd = date_selected.strftime("%Y%m%d")
-            weather = get_asos_weather(region, ymd, ASOS_API_KEY)
-
-        # ✅ 예측 가능한 기상 정보가 없을 경우 중단
-        if not weather:
-            st.error("❌ 기상 정보 없음")
-            st.stop()
-
-        # ✅ 기온/습도 추출
-        tmx = weather.get("TMX", 0)
-        tmn = weather.get("TMN", 0)
-        reh = weather.get("REH", 0)
-
-        # ✅ 체감온도 계산
-        heat_index = compute_heat_index(tmx, reh)
-
-        # ✅ 예측 수행
-        pred, avg_temp, input_df = predict_from_weather(tmx, tmn, reh)
-        risk = get_risk_level(pred)
-
-        with st.expander("🧪 입력값 확인"):
-            st.dataframe(input_df)
-
-        # ✅ 예측 결과 출력
-        st.markdown("#### 💡 예측 결과")
-        c1, c2 = st.columns(2)
-        c1.metric("예측 환자 수", f"{pred:.2f}명")
-        c2.metric("위험 등급", risk)
-
-        # ✅ 전년도 환자수 비교
-        def get_last_year_patient_count(current_date, region, static_file="ML_7_8월_2021_2025_dataset.xlsx"):
+# ✅ 작년 동일 날짜 환자 수 조회 함수
+def get_last_year_patient_count(current_date, region, static_file="ML_7_8월_2021_2025_dataset.xlsx"):
     try:
-        # 작년 동일 날짜 계산
         last_year_date = (current_date - datetime.timedelta(days=365)).strftime("%Y-%m-%d")
-
-        # 엑셀 로드 (날짜 컬럼이 '일자' 또는 '일시' 여부 확인)
         df_all = pd.read_excel(static_file, engine="openpyxl")
 
-        # 엑셀이 float 형태로 날짜 저장한 경우 변환
-        if "일시" in df_all.columns and pd.api.types.is_numeric_dtype(df_all["일시"]):
-            df_all["일시"] = pd.to_datetime("1899-12-30") + pd.to_timedelta(df_all["일시"], unit="D")
-            df_all["일자"] = df_all["일시"].dt.strftime("%Y-%m-%d")
+        # 날짜 형식 처리
+        if "일시" in df_all.columns and pd.api.types.is_numeric_dtype(df_all["\uc77c\uc2dc"]):
+            df_all["\uc77c\uc2dc"] = pd.to_datetime("1899-12-30") + pd.to_timedelta(df_all["\uc77c\uc2dc"], unit="D")
+            df_all["\uc77c\uc790"] = df_all["\uc77c\uc2dc"].dt.strftime("%Y-%m-%d")
         elif "일자" not in df_all.columns and "일시" in df_all.columns:
-            df_all["일자"] = pd.to_datetime(df_all["일시"]).dt.strftime("%Y-%m-%d")
+            df_all["\uc77c\uc790"] = pd.to_datetime(df_all["\uc77c\uc2dc"]).dt.strftime("%Y-%m-%d")
 
-        # 조건 설정
-        cond = (df_all["일자"] == last_year_date) & (df_all["광역자치단체"] == region)
+        cond = (df_all["\uc77c\uc790"] == last_year_date) & (df_all["\uad11\uc5ed\uc790\uce58\ub2e8\uccb4"] == region)
         row = df_all[cond]
+        return int(row["\ud658\uc790\uc218"].values[0]) if not row.empty else None
 
-        # 환자수 반환
-        if not row.empty:
-            return int(row["환자수"].values[0])
-        else:
-            return None
     except Exception as e:
         st.warning(f"⚠️ 작년 환자수 불러오기 오류: {e}")
         return None
 
-        # ✅ 작년 동일 날짜 환자수 불러오기 및 비교
-        last_year_count = get_last_year_patient_count(date_selected, region)
-        if last_year_count is not None:
-            delta = pred - last_year_count
-            st.markdown(
-            f"📅 **전년도({(date_selected - datetime.timedelta(days=365)).strftime('%Y-%m-%d')}) 동일 날짜 환자수**: "
-        f"**{last_year_count}명**"
-    )
-            st.markdown(
-        f"📈 **전년 대비 증감**: {'+' if delta >= 0 else ''}{delta:.1f}명"
-    )
-        else:
-              st.info("ℹ️ 전년도 동일 날짜의 환자 수 데이터를 찾을 수 없습니다.")
+# ✅ 날짜 선택 범위 설정
+min_pred_date = datetime.date(2025, 7, 1)
+max_pred_date = datetime.date(2025, 8, 31)
 
-        # ✅ 예측값 CSV로 저장 (tab3에서 활용)
-        SAVE_FILE = "ML_asos_total_prediction.csv"
-        today_str = date_selected.strftime("%Y-%m-%d")
+# ✅ 지역 및 날짜 선택 UI
+region = st.selectbox("지역 선택", list(region_to_stn_id.keys()), key="region_tab1")
+date_selected = st.date_input("날짜 선택", value=min_pred_date, min_value=min_pred_date, max_value=max_pred_date, key="date_tab1")
 
-        try:
-            df_total = pd.read_csv(SAVE_FILE, encoding="utf-8-sig")
-        except FileNotFoundError:
-            df_total = pd.DataFrame(columns=["일자", "서울시예측환자수"])
+# ✅ 예측 버튼 클릭 시 실행
+if st.button("🔍 예측하기", key="predict_tab1"):
+    today = datetime.date.today()
 
-        new_row = pd.DataFrame([{
-            "일자": date_selected.strftime("%Y-%m-%d"),
-            "서울시예측환자수": round(pred, 2)
-        }])
+    if date_selected >= today:
+        weather, base_date, base_time = get_weather(region, date_selected, KMA_API_KEY)
+    else:
+        ymd = date_selected.strftime("%Y%m%d")
+        weather = get_asos_weather(region, ymd, ASOS_API_KEY)
 
-        df_total = pd.concat([df_total, new_row], ignore_index=True)
-        df_total.to_csv(SAVE_FILE, index=False, encoding="utf-8-sig")
+    if not weather:
+        st.error("❌ 기상 정보 없음")
+        st.stop()
 
-        st.success(f"✅ 예측값이 '{SAVE_FILE}'에 저장되었습니다.")
+    tmx = weather.get("TMX", 0)
+    tmn = weather.get("TMN", 0)
+    reh = weather.get("REH", 0)
+    heat_index = compute_heat_index(tmx, reh)
 
-        # 🔁 GitHub에 예측값 자동 저장
-        with open(SAVE_FILE, "rb") as f:
-            content = f.read()
-        b64_content = base64.b64encode(content).decode("utf-8")
+    pred, avg_temp, input_df = predict_from_weather(tmx, tmn, reh)
+    risk = get_risk_level(pred)
 
-        api_url = f"https://api.github.com/repos/{GITHUB_USERNAME}/{GITHUB_REPO}/contents/{SAVE_FILE}"
-        r = requests.get(api_url, headers={"Authorization": f"Bearer {GITHUB_TOKEN}"})
-        sha = r.json().get("sha") if r.status_code == 200 else None
+    with st.expander("🤪 입력값 확인"):
+        st.dataframe(input_df)
 
-        payload = {
-            "message": f"[tab1] {date_selected} 예측값 업데이트",
-            "content": b64_content,
-            "branch": GITHUB_BRANCH
-        }
-        if sha:
-            payload["sha"] = sha
+    st.markdown("#### 💡 예측 결과")
+    c1, c2 = st.columns(2)
+    c1.metric("예측 환자 수", f"{pred:.2f}명")
+    c2.metric("위험 등급", risk)
 
-        headers = {
-            "Authorization": f"Bearer {GITHUB_TOKEN}",
-            "Accept": "application/vnd.github+json"
-        }
-        r = requests.put(api_url, headers=headers, json=payload)
+    last_year_count = get_last_year_patient_count(date_selected, region)
+    if last_year_count is not None:
+        delta = pred - last_year_count
+        st.markdown(f"""
+        📅 **전년도({(date_selected - datetime.timedelta(days=365)).strftime('%Y-%m-%d')}) 동일 날짜 환자수**: **{last_year_count}명**  
+        📈 **전년 대비 증가**: {'+' if delta >= 0 else ''}{delta:.1f}명
+        """)
+    else:
+        st.info("ℹ️ 전년도 동일 날짜의 환자 수 데이터를 찾을 수 없습니다.")
 
-        if r.status_code in [200, 201]:
-            st.success("✅ GitHub에 예측값 저장 완료")
-            st.info(f"🔗 [GitHub에서 확인하기](https://github.com/{GITHUB_USERNAME}/{GITHUB_REPO}/blob/{GITHUB_BRANCH}/{SAVE_FILE})")
-        else:
-            st.warning(f"⚠️ GitHub 저장 실패: {r.status_code} / {r.text[:200]}")
+    SAVE_FILE = "ML_asos_total_prediction.csv"
+    today_str = date_selected.strftime("%Y-%m-%d")
+
+    try:
+        df_total = pd.read_csv(SAVE_FILE, encoding="utf-8-sig")
+    except FileNotFoundError:
+        df_total = pd.DataFrame(columns=["\uc77c\uc790", "\uc11c\uc6b8\uc2dc\uc608\uce21\ud658\uc790\uc218"])
+
+    new_row = pd.DataFrame([{ "\uc77c\uc790": today_str, "\uc11c\uc6b8\uc2dc\uc608\uce21\ud658\uc790\uc218": round(pred, 2) }])
+    df_total = pd.concat([df_total, new_row], ignore_index=True)
+    df_total.to_csv(SAVE_FILE, index=False, encoding="utf-8-sig")
+    st.success(f"✅ 예측값이 '{SAVE_FILE}'에 저장되었습니다.")
+
+    with open(SAVE_FILE, "rb") as f:
+        content = f.read()
+    b64_content = base64.b64encode(content).decode("utf-8")
+
+    api_url = f"https://api.github.com/repos/{GITHUB_USERNAME}/{GITHUB_REPO}/contents/{SAVE_FILE}"
+    r = requests.get(api_url, headers={"Authorization": f"Bearer {GITHUB_TOKEN}"})
+    sha = r.json().get("sha") if r.status_code == 200 else None
+
+    payload = {
+        "message": f"[tab1] {date_selected} 예측값 업데이트",
+        "content": b64_content,
+        "branch": GITHUB_BRANCH
+    }
+    if sha:
+        payload["sha"] = sha
+
+    headers = {
+        "Authorization": f"Bearer {GITHUB_TOKEN}",
+        "Accept": "application/vnd.github+json"
+    }
+    r = requests.put(api_url, headers=headers, json=payload)
+
+    if r.status_code in [200, 201]:
+        st.success("✅ GitHub에 예측값 저장 완료")
+        st.info(f"🔗 [GitHub에서 확인하기](https://github.com/{GITHUB_USERNAME}/{GITHUB_REPO}/blob/{GITHUB_BRANCH}/{SAVE_FILE})")
+    else:
+        st.warning(f"⚠️ GitHub 저장 실패: {r.status_code} / {r.text[:200]}")
 
 with tab2:
     # ✅ 사용법 안내
