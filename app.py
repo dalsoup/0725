@@ -321,31 +321,58 @@ with tab3:
     # ✅ 사용법 안내
     with st.expander("📊 tab3에서 산출된 정보는 이렇게 활용됩니다"):
         st.markdown("""
-        1. tab1에서 예측한 **광역시도별 온열질환자 수**를 자치구별 **사회적 취약성(S)**에    
-           따라 분배하고, 정규화하여 자치구별 **예측 환자수(P_pred)**로 변환합니다.
-        2. tab2에서 수집된 **실제 온열질환자 수(P_real)**,  
-           그리고 자치구별 **사회적(S)** 및 **환경적(E)** 취약성 지표와 함께  
-           **종합적인 피해점수(0~100점)**를 계산합니다.
-        3. 피해점수가 높을수록 해당 자치구가 더 큰 폭염 피해 위험에 노출된 것으로 간주되며,  
-           위험등급(🟢~🔥)과 **보상금 산정 기준**으로 활용됩니다.
+        HeatAI 플랫폼은 지수형 폭염 피해 보험의 자동화된 보상 판단을 위해, 예측 기반과 실제 데이터를 바탕으로 두 가지 피해점수를 산출합니다:
 
-        📌 피해점수 계산은 다음 요소를 기반으로 이루어집니다:
-        - 🧓 S: 고령자 비율, 야외 근로자 비율, 열취약 인구 비율  
-        - 🌍 E: 열섬지수, 녹지율, 냉방보급률 (표준화된 환경지표)  
-        - 📈 P_pred: AI 예측 환자 수 (자치구별 분배 및 정규화)  
+        1. 📈 **사전 피해점수**: tab1에서 예측한 광역시도별 환자 수(P_pred)를 바탕으로, 사회적 취약성(S)에 따라 자치구별로 분배하고 정규화하여 계산합니다. 이 점수는 시민에게 공개되는 예비 경고 수단으로 활용됩니다.
+
+        2. 📉 **사후 피해점수**: tab2에서 수집된 실제 환자 수(P_real)와 환경적 취약성(E)을 반영하여 최종 보상금 산정에 활용됩니다.
+
+        피해점수는 다음과 같은 요소로 계산됩니다:
+
+        - 🧓 S: 고령자 비율, 야외근로자 비율, 열취약 인구 비율 (사회적 취약성)
+        - 🌍 E: 열섬지수, 녹지율, 냉방보급률 (표준화된 환경지표)
+        - 📈 P_pred: 예측 환자 수 (자치구별 분배 및 √정규화)
         - 📉 P_real: 실제 환자 수 (1명 이상이면 1.0, 없으면 0.0)
 
-        피해점수 = 100 × (0.2 × S + 0.2 × E + 0.5 × P_pred + 0.1 × P_real)
+        ### 🧮 피해점수 계산식
+        **사전 피해점수** = 100 × (0.25 × S + 0.25 × E + 0.5 × P_pred)
+
+        **사후 피해점수** = 100 × (0.2 × S + 0.2 × E + 0.5 × P_pred + 0.1 × P_real)
+
+        위험등급 및 보상금은 다음 기준에 따라 산정됩니다:
+
+        - 🔵 0~29점: 보상 없음
+        - 🟡 30~39점: 5천 원
+        - 🔴 40~49점: 1만 원
+        - 🔥 50점 이상: 2만 원
         """)
 
     # ✅ 함수 정의
+    def calculate_damage_score_prescore(s, e, p_pred):
+        return 100 * (0.25 * s + 0.25 * e + 0.5 * p_pred)
+
+    def calculate_damage_score_final(s, e, p_pred, p_real):
+        return 100 * (0.2 * s + 0.2 * e + 0.5 * p_pred + 0.1 * p_real)
+
+    def score_to_grade(score):
+        if score < 30: return "🟢 낮음"
+        elif score < 40: return "🟡 보통"
+        elif score < 50: return "🔴 높음"
+        else: return "🔥 매우 높음"
+
+    def calc_payout(score):
+        if score < 30: return 0
+        elif score < 40: return 5000
+        elif score < 50: return 10000
+        else: return 20000
+
     def format_debug_log(row, date_str):
         return f"""[피해점수 계산 로그 - {row['자치구']} / {date_str}]
 [S 계산] - 고령자비율 = {row['고령자비율']:.4f}, 야외근로자비율 = {row['야외근로자비율']:.4f}, 열취약인구비율 = {row['열쾌적취약인구비율']:.4f} → S = {row['S']:.4f}
 [E 계산] - 열섬지수 = {row['열섬지수_std']:.4f}, 녹지율 = {row['녹지율_std']:.4f}, 냉방보급률 = {row['냉방보급률_std']:.4f} → E = {row['E']:.4f}
 [P 계산] - 예측환자수 = {row['P_pred_raw']:.2f}명 → 정규화(P_pred) = {row['P_pred']:.4f}
 [R 계산] - 실제환자수 = {row['환자수']}, 변환(P_real) = {1.0 if row['환자수'] >= 1 else 0.0}
-🧮 피해점수 = {row['피해점수']:.2f} / 위험등급: {row['위험등급']} / 보상금: {row['보상금']}원
+🧮 사전점수 = {row['피해점수_사전']:.2f} / 사후점수 = {row['피해점수']:.2f} / 위험등급: {row['위험등급']} / 보상금: {row['보상금']}원
 """
 
     def calculate_social_index(row):
@@ -369,30 +396,10 @@ with tab3:
         )
 
     def distribute_pred_by_s(merged_df, total_pred):
-        """
-        S 비율에 따라 자치구별 예측환자수 분배 및 √ 정규화
-        (25명은 서울시 하루 최대 예측 환자수 기준으로 정규화에 사용됨)
-        """
         s_sum = merged_df["S"].sum()
         merged_df["P_pred_raw"] = total_pred * (merged_df["S"] / s_sum)
         merged_df["P_pred"] = (merged_df["P_pred_raw"] / 25) ** 0.5
         return merged_df
-
-    def calculate_damage_score_v2(s, e, p_pred, p_real):
-        return 100 * (0.2 * s + 0.2 * e + 0.5 * p_pred + 0.1 * p_real)
-
-    def score_to_grade(score):
-        if score < 20: return "🟢 매우 낮음"
-        elif score < 30: return "🟡 낮음"
-        elif score < 40: return "🟠 보통"
-        elif score < 50: return "🔴 높음"
-        else: return "🔥 매우 높음"
-
-    def calc_payout(score):
-        if score < 30: return 0
-        elif score < 40: return 5000
-        elif score < 50: return 10000
-        else: return 20000
 
     def load_csv_with_fallback(path):
         for enc in ["utf-8-sig", "cp949", "euc-kr"]:
@@ -450,8 +457,14 @@ with tab3:
 
         merged_all = distribute_pred_by_s(merged_all, seoul_pred)
 
+        merged_all["피해점수_사전"] = merged_all.apply(
+            lambda row: calculate_damage_score_prescore(
+                row["S"], row["E"], row["P_pred"]
+            ),
+            axis=1
+        )
         merged_all["피해점수"] = merged_all.apply(
-            lambda row: calculate_damage_score_v2(
+            lambda row: calculate_damage_score_final(
                 row["S"], row["E"], row["P_pred"], 1.0 if row["환자수"] >= 1 else 0.0
             ),
             axis=1
@@ -474,10 +487,14 @@ with tab3:
         merged["예상총보상금"] = merged["보상금"] * subs_count
         st.success(f"💰 예상 보상금액: {int(merged['예상총보상금'].sum()):,}원")
 
-        show_cols = ["자치구", "피해점수", "위험등급", "보상금", "가입자수", "예상총보상금"]
-        st.dataframe(merged[show_cols], use_container_width=True)
+        show_cols = ["자치구", "피해점수_사전", "피해점수", "위험등급", "보상금", "가입자수", "예상총보상금"]
+        st.markdown("#### 💡 자치구별 피해점수 비교")
+        st.dataframe(
+            merged[show_cols],
+            use_container_width=True
+        )
 
-        st.markdown("#### 📊 피해점수 분포")
+        st.markdown("#### 📊 피해점수 분포 (사후 기준)")
         st.bar_chart(data=merged_all.set_index("자치구")["피해점수"])
 
         # ✅ 단일 자치구 디버깅 로그
@@ -506,4 +523,3 @@ with tab3:
 
     except Exception as e:
         st.error(f"❌ 처리 중 오류가 발생했습니다: {e}")
-
