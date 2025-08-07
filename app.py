@@ -233,6 +233,7 @@ with tab2:
 
         3. 예측 결과는 `ML_asos_total_prediction.csv`에 저장되며,
            GitHub에 자동 업로드되어 tab3에서 피해점수 계산에 즉시 연동됩니다.
+        """) 
 
     # 날짜 선택 범위 설정
     min_pred_date = datetime.date(2025, 7, 1)
