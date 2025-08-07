@@ -398,6 +398,7 @@ with tab3:
 """
 
 
+
     def calculate_social_index(row):
         return (
             0.5 * row["고령자비율"] +
