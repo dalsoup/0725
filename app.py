@@ -516,3 +516,6 @@ with tab3:
 
         st.markdown("#### 피해점수 분포 (사후 기준)")
         st.bar_chart(data=merged_all.set_index("자치구")["피해점수"])
+
+    except Exception as e:
+        st.error(f"피해점수 그래프 생성 중 오류 발생: {e}")
