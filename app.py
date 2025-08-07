@@ -447,12 +447,11 @@ with tab3:
 
     # ✅ 메인 실행
     try:
-        col1, col2 = st.columns(2)
-        with col1:
-            selected_date = st.date_input("📅 분석 날짜 선택", datetime.date.today())
-            ymd = selected_date.strftime("%Y-%m-%d")
-        with col2:
-            selected_gu = None
+        # ✅ 날짜 선택 (단일 칼럼)
+        today = datetime.date.today()
+        min_date = today - datetime.timedelta(days=6)
+        selected_date = st.date_input("📅 분석 기준일 선택 (최근 7일)", today, min_value=min_date, max_value=today)
+        ymd = selected_date.strftime("%Y-%m-%d")
 
         ml_data = load_csv_from_github("ML_asos_dataset.csv")
         if ml_data.empty:
