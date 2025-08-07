@@ -16,7 +16,7 @@ from utils import (
 )
 from model_utils import predict_from_weather
 
-# ----------------------- 📦 설정 -----------------------
+# ----------------------- 설정 -----------------------
 st.set_page_config(layout="centered")
 
 KMA_API_KEY = unquote(st.secrets["KMA"]["API_KEY"])
@@ -27,12 +27,12 @@ GITHUB_BRANCH = st.secrets["GITHUB"]["BRANCH"]
 GITHUB_TOKEN = st.secrets["GITHUB"]["TOKEN"]
 GITHUB_FILENAME = "ML_asos_dataset.csv"
 
-# ----------------------- 🧭 UI 시작 -----------------------
+# ----------------------- UI 시작 -----------------------
 st.title("HeatAI")
-tab1, tab2, tab3 = st.tabs(["1️⃣ 학습 데이터 입력", "2️⃣ 환자 수 지표 산출", "3️⃣ 피해점수 계산 및 보상"])
+tab1, tab2, tab3 = st.tabs(["학습 데이터 입력", "환자 수 지표 산출", "피해점수 계산 및 보상"])
 
 with tab1:
-    with st.expander("📥 이 탭에서는 무엇을 하나요?"):
+    with st.expander("이 탭에서는 무엇을 하나요?"):
         st.markdown("""
         이 탭은 AI 모델의 학습을 위한 **사용자 입력 학습 데이터**를 추가하는 기능을 수행합니다. 
         사용자는 질병관리청 온열질환자 통계를 기반으로, 
@@ -49,19 +49,19 @@ with tab1:
         3. 자치구별 환자수 + 기상정보 → 학습용 데이터프레임 생성
         4. `ML_asos_dataset.csv`에 저장 후 자동 재학습 수행
 
-        ✅ 이 과정은 TAB2의 예측 정확도를 향상시키며, TAB3의 피해점수 신뢰도를 높여줍니다.
-        📂 아래 링크에서 질병청의 온열질환자 엑셀 파일을 다운로드해 업로드해주세요.  
-        👉 [온열질환 응급실감시체계 다운로드](https://www.kdca.go.kr/board/board.es?mid=a20205030102&bid=0004&&cg_code=C01)
+        이 과정은 TAB2의 예측 정확도를 향상시키며, TAB3의 피해점수 신뢰도를 높여줍니다.
+        아래 링크에서 질병청의 온열질환자 엑셀 파일을 다운로드해 업로드해주세요.  
+        [온열질환 응급실감시체계 다운로드](https://www.kdca.go.kr/board/board.es?mid=a20205030102&bid=0004&&cg_code=C01)
 """)
 
-    region = st.selectbox("🌐 광역시도 선택", ["서울특별시"], key="region_tab1")
+    region = st.selectbox("광역시도 선택", ["서울특별시"], key="region_tab1")
 
     all_gus = [
         '종로구', '중구', '용산구', '성동구', '광진구', '동대문구', '중랑구', '성북구', '강북구', '도봉구',
         '노원구', '은평구', '서대문구', '마포구', '양천구', '강서구', '구로구', '금천구', '영등포구',
         '동작구', '관악구', '서초구', '강남구', '송파구', '강동구'
     ]
-    gus = st.multiselect("🏘️ 자치구 선택 (선택하지 않으면 전체)", all_gus, key="gu_tab1_multi")
+    gus = st.multiselect("자치구 선택 (선택하지 않으면 전체)", all_gus, key="gu_tab1_multi")
     if not gus:
         gus = all_gus
 
@@ -69,14 +69,14 @@ with tab1:
     max_record_date = datetime.date.today() - datetime.timedelta(days=1)
 
     date_selected = st.date_input(
-        "📅 저장할 날짜 선택", 
+        "저장할 날짜 선택", 
         value=max_record_date, 
         min_value=min_record_date, 
         max_value=max_record_date,
         key="date_tab1"
     )
 
-    uploaded_file = st.file_uploader("📎 질병청 환자수 파일 업로드 (.xlsx, 시트명: 서울특별시)", type=["xlsx"], key="upload_tab1")
+    uploaded_file = st.file_uploader("질병청 환자수 파일 업로드 (.xlsx, 시트명: 서울특별시)", type=["xlsx"], key="upload_tab1")
 
     if uploaded_file and date_selected:
         try:
@@ -104,7 +104,7 @@ with tab1:
             for gu in gus:
                 selected = df_long[(df_long["일자"] == ymd) & (df_long["자치구"] == gu)]
                 if selected.empty:
-                    st.warning(f"❌ {ymd} {gu} 환자수 데이터가 없습니다.")
+                    st.warning(f"{ymd} {gu} 환자수 데이터가 없습니다.")
                     continue
 
                 환자수 = int(selected["환자수"].values[0])
@@ -121,14 +121,14 @@ with tab1:
                 })
 
             if not preview_list:
-                st.warning("❌ 선택한 날짜와 자치구 조합에 저장할 데이터가 없습니다.")
+                st.warning("선택한 날짜와 자치구 조합에 저장할 데이터가 없습니다.")
                 st.stop()
 
             preview_df = pd.DataFrame(preview_list)
-            st.markdown("#### ✅ 저장될 학습 데이터 미리보기")
+            st.markdown("#### 저장될 학습 데이터 미리보기")
             st.dataframe(preview_df)
 
-            if st.button("💾 GitHub에 저장하고 모델 재학습하기", key="save_and_train_tab1"):
+            if st.button("GitHub에 저장하고 모델 재학습하기", key="save_and_train_tab1"):
                 csv_path = "ML_asos_dataset.csv"
 
                 if os.path.exists(csv_path):
@@ -144,7 +144,7 @@ with tab1:
                     existing = existing[~existing.set_index(merge_keys).index.isin(preview_df.set_index(merge_keys).index)]
                 df_all = pd.concat([existing, preview_df], ignore_index=True)
                 df_all.to_csv(csv_path, index=False, encoding="utf-8-sig")
-                st.success("✅ 학습 데이터 저장 완료 (로컬)")
+                st.success("학습 데이터 저장 완료 (로컬)")
 
                 try:
                     with open(csv_path, "rb") as f:
@@ -169,26 +169,26 @@ with tab1:
                     }
                     r = requests.put(api_url, headers=headers, json=payload)
                     if r.status_code in [200, 201]:
-                        st.success("✅ GitHub 저장 완료")
-                        st.info(f"🔗 [GitHub에서 보기](https://github.com/{GITHUB_USERNAME}/{GITHUB_REPO}/blob/{GITHUB_BRANCH}/{GITHUB_FILENAME})")
+                        st.success("GitHub 저장 완료")
+                        st.info(f"[GitHub에서 보기](https://github.com/{GITHUB_USERNAME}/{GITHUB_REPO}/blob/{GITHUB_BRANCH}/{GITHUB_FILENAME})")
                     else:
-                        st.warning(f"⚠️ GitHub 저장 실패: {r.status_code} {r.text[:200]}")
+                        st.warning(f"GitHub 저장 실패: {r.status_code} {r.text[:200]}")
 
                 except Exception as e:
-                    st.error(f"❌ 처리 중 오류 발생: {e}")
+                    st.error(f"처리 중 오류 발생: {e}")
                     st.stop()
 
-                st.info("📈 머신러닝 모델 재학습 중입니다...")
+                st.info("머신러닝 모델 재학습 중입니다...")
                 try:
                     result = subprocess.run([sys.executable, "train_model.py"], capture_output=True, text=True, check=True)
-                    st.success("✅ 모델 재학습 완료")
-                    st.text_area("📄 학습 로그", result.stdout, height=300)
+                    st.success("모델 재학습 완료")
+                    st.text_area("학습 로그", result.stdout, height=300)
                 except subprocess.CalledProcessError as e:
-                    st.error("❌ 모델 학습 실패")
-                    st.text_area("🚨 오류 로그", e.stderr or str(e), height=300)
+                    st.error("모델 학습 실패")
+                    st.text_area("오류 로그", e.stderr or str(e), height=300)
 
         except Exception as e:
-            st.error(f"❌ 처리 중 오류 발생: {e}")
+            st.error(f"처리 중 오류 발생: {e}")
 
 with tab2:
     def get_last_year_patient_count(current_date, region):
@@ -209,10 +209,10 @@ with tab2:
             return int(row["환자수"].values[0]) if not row.empty else None
 
         except Exception as e:
-            st.warning(f"⚠️ 작년 환자수 불러오기 오류: {e}")
+            st.warning(f"작년 환자수 불러오기 오류: {e}")
             return None
 
-    with st.expander("📈 이 탭에서는 무엇을 하나요?"):
+    with st.expander("이 탭에서는 무엇을 하나요?"):
         st.markdown("""
         이 탭은 선택한 날짜의 **기상 조건(예보 또는 실측)**을 기반으로,  
         AI 모델이 **서울시 전체 예상 온열 환자 수(P_pred)**를 추정합니다.
@@ -234,16 +234,16 @@ with tab2:
         3. 예측 결과는 `ML_asos_total_prediction.csv`에 저장되며,
            GitHub에 자동 업로드되어 tab3에서 피해점수 계산에 즉시 연동됩니다.
 
-    # ✅ 날짜 선택 범위 설정
+    # 날짜 선택 범위 설정
     min_pred_date = datetime.date(2025, 7, 1)
     max_pred_date = datetime.date(2025, 8, 31)
 
-    # ✅ 지역 및 날짜 선택 UI
+    # 지역 및 날짜 선택 UI
     region = st.selectbox("지역 선택", list(region_to_stn_id.keys()), key="region_tab2")
     date_selected = st.date_input("날짜 선택", value=min_pred_date, min_value=min_pred_date, max_value=max_pred_date, key="date_tab2")
 
-    # ✅ 예측 버튼 클릭 시 실행
-    if st.button("🔍 P_pred 추정하기", key="predict_tab2"):
+    # 예측 버튼 클릭 시 실행
+    if st.button("P_pred 추정하기", key="predict_tab2"):
         today = datetime.date.today()
 
         if date_selected >= today:
@@ -253,7 +253,7 @@ with tab2:
             weather = get_asos_weather(region, ymd, ASOS_API_KEY)
 
         if not weather:
-            st.error("❌ 기상 정보 없음")
+            st.error("기상 정보 없음")
             st.stop()
 
         tmx = weather.get("TMX", 0)
@@ -263,10 +263,10 @@ with tab2:
         pred, avg_temp, heat_index, input_df = predict_from_weather(tmx, tmn, reh)
         risk = get_risk_level(pred)
 
-        with st.expander("🧪 입력값 확인"):
+        with st.expander("입력값 확인"):
             st.dataframe(input_df)
 
-        st.markdown("#### 💡 P_pred")
+        st.markdown("####P_pred")
         c1, c2 = st.columns(2)
         c1.metric("예측 환자 수", f"{pred:.2f}명")
         c2.metric("위험 등급", risk)
@@ -275,11 +275,11 @@ with tab2:
         if last_year_count is not None:
             delta = pred - last_year_count
             st.markdown(f"""
-            📅 **전년도({(date_selected - datetime.timedelta(days=365)).strftime('%Y-%m-%d')}) 동일 날짜 환자수**: **{last_year_count}명**  
-            📈 **전년 대비 증가**: {'+' if delta >= 0 else ''}{delta:.1f}명
+            **전년도({(date_selected - datetime.timedelta(days=365)).strftime('%Y-%m-%d')}) 동일 날짜 환자수**: **{last_year_count}명**  
+            **전년 대비 증가**: {'+' if delta >= 0 else ''}{delta:.1f}명
             """)
         else:
-            st.info("ℹ️ 전년도 동일 날짜의 환자 수 데이터를 찾을 수 없습니다.")
+            st.info("전년도 동일 날짜의 환자 수 데이터를 찾을 수 없습니다.")
 
         SAVE_FILE = "ML_asos_total_prediction.csv"
         today_str = date_selected.strftime("%Y-%m-%d")
@@ -292,7 +292,7 @@ with tab2:
         new_row = pd.DataFrame([{ "일자": today_str, "서울시예측환자수": round(pred, 2) }])
         df_total = pd.concat([df_total, new_row], ignore_index=True)
         df_total.to_csv(SAVE_FILE, index=False, encoding="utf-8-sig")
-        st.success(f"✅ 예측값이 '{SAVE_FILE}'에 저장되었습니다.")
+        st.success(f"예측값이 '{SAVE_FILE}'에 저장되었습니다.")
 
         with open(SAVE_FILE, "rb") as f:
             content = f.read()
@@ -317,14 +317,14 @@ with tab2:
         r = requests.put(api_url, headers=headers, json=payload)
 
         if r.status_code in [200, 201]:
-            st.success("✅ GitHub에 예측값 저장 완료")
+            st.success("GitHub에 예측값 저장 완료")
             st.info(f"🔗 [GitHub에서 확인하기](https://github.com/{GITHUB_USERNAME}/{GITHUB_REPO}/blob/{GITHUB_BRANCH}/{SAVE_FILE})")
         else:
-            st.warning(f"⚠️ GitHub 저장 실패: {r.status_code} / {r.text[:200]}")
+            st.warning(f"GitHub 저장 실패: {r.status_code} / {r.text[:200]}")
 
 
 with tab3:
-    with st.expander("📍 이 탭에서는 무엇을 하나요?"):
+    with st.expander("이 탭에서는 무엇을 하나요?"):
         st.markdown("""
         이 탭은 HeatAI의 핵심 기능으로, 
         **예측 환자 수(P_pred)**, **실제 환자 수(P_real)**, 
@@ -348,8 +348,7 @@ with tab3:
         모든 계산 결과는 디버깅 로그로 다운로드 가능합니다.
         """)
 
-    # ✅ 함수 정의
-
+    # 함수 정의
     def calculate_heatwave_multiplier(temps):
         count_33 = count_35 = max_33 = max_35 = 0
         for t in temps:
@@ -377,10 +376,10 @@ with tab3:
         return 100 * (0.2 * s + 0.2 * e + 0.5 * p_pred + 0.1 * p_real)
 
     def score_to_grade(score):
-        if score < 30: return "🟢 낮음"
-        elif score < 40: return "🟡 보통"
-        elif score < 50: return "🔴 높음"
-        else: return "🔥 매우 높음"
+        if score < 30: return "낮음"
+        elif score < 40: return "보통"
+        elif score < 50: return "높음"
+        else: return "매우 높음"
 
     def calc_payout(score):
         if score < 30: return 0
@@ -395,7 +394,7 @@ with tab3:
 [P 계산] - 예측환자수 = {row['P_pred_raw']:.2f}명 → 정규화(P_pred) = {row['P_pred']:.4f}
 [R 계산] - 실제환자수 = {row['환자수']}, 변환(P_real) = {1.0 if row['환자수'] >= 1 else 0.0}
 [H 계산] - 폭염가중치 = {row['H']:.2f}
-🧮 사전점수 = {row['피해점수_사전']:.2f} / 사후점수 = {row['피해점수']:.2f} / 위험등급: {row['위험등급']} / 보상금: {row['보상금']}원
+사전점수 = {row['피해점수_사전']:.2f} / 사후점수 = {row['피해점수']:.2f} / 위험등급: {row['위험등급']} / 보상금: {row['보상금']}원
 """
 
 
@@ -431,7 +430,7 @@ with tab3:
                 return pd.read_csv(path, encoding=enc)
             except UnicodeDecodeError:
                 continue
-        raise UnicodeDecodeError(f"❌ 인코딩 실패: {path}")
+        raise UnicodeDecodeError(f"인코딩 실패: {path}")
 
     def load_csv_from_github(filename):
         try:
@@ -440,35 +439,35 @@ with tab3:
             r.raise_for_status()
             return pd.read_csv(io.StringIO(r.text), encoding="utf-8-sig")
         except Exception as e:
-            st.error(f"❌ GitHub에서 {filename} 불러오기 실패: {e}")
+            st.error(f"GitHub에서 {filename} 불러오기 실패: {e}")
             return pd.DataFrame()
 
 
-    # ✅ 메인 실행
+    # 메인 실행
     try:
-        # ✅ 날짜 선택 (단일 칼럼)
+        # 날짜 선택 (단일 칼럼)
         today = datetime.date.today()
         min_date = today - datetime.timedelta(days=6)
-        selected_date = st.date_input("📅 분석 기준일 선택 (최근 7일)", today, min_value=min_date, max_value=today)
+        selected_date = st.date_input("분석 기준일 선택 (최근 7일)", today, min_value=min_date, max_value=today)
         ymd = selected_date.strftime("%Y-%m-%d")
 
         ml_data = load_csv_from_github("ML_asos_dataset.csv")
         if ml_data.empty:
-            st.warning("❗️기록된 학습 데이터가 없습니다. tab2에서 데이터를 먼저 저장해주세요.")
+            st.warning("기록된 학습 데이터가 없습니다. tab2에서 데이터를 먼저 저장해주세요.")
             st.stop()
         ml_data = ml_data[ml_data["일자"] == ymd]
         static_data = load_csv_with_fallback("seoul_static_data.csv")
         merged_all = pd.merge(static_data, ml_data, on="자치구", how="left")
 
         if merged_all.empty:
-            st.warning("❗️선택한 날짜의 데이터가 없습니다.")
+            st.warning("선택한 날짜의 데이터가 없습니다.")
             st.stop()
 
         df_total = load_csv_from_github("ML_asos_total_prediction.csv")
         pred_row = df_total[df_total["일자"] == ymd]
 
         if pred_row.empty:
-            st.warning(f"⚠️ {ymd} 예측값이 존재하지 않습니다. tab1에서 먼저 예측을 수행하세요.")
+            st.warning(f"{ymd} 예측값이 존재하지 않습니다. tab1에서 먼저 예측을 수행하세요.")
             st.stop()
 
         seoul_pred = float(pred_row["서울시예측환자수"].values[0])
@@ -494,7 +493,7 @@ with tab3:
             axis=1
         )
 
-        # 🔁 폭염 지속성 가중치 계산 및 반영
+        # 폭염 지속성 가중치 계산 및 반영
         heatwave_temps = merged_all.sort_values("일자").groupby("자치구")["최고체감온도(°C)"].apply(list)
         merged_all["H"] = merged_all["자치구"].map(lambda gu: calculate_heatwave_multiplier(heatwave_temps.get(gu, [])))
         merged_all["피해점수_사전"] *= merged_all["H"]
@@ -505,7 +504,7 @@ with tab3:
 
         col1, col2 = st.columns(2)
         with col1:
-            selected_gu = st.selectbox("🏘️ 자치구 선택", sorted(merged_all["자치구"].unique()))
+            selected_gu = st.selectbox("자치구 선택", sorted(merged_all["자치구"].unique()))
         with col2:
             subs_count = st.number_input(f"{selected_gu} 가입자 수", min_value=0, step=1, key="subs_tab3")
 
@@ -516,41 +515,41 @@ with tab3:
 
         merged["가입자수"] = subs_count
         merged["예상총보상금"] = merged["보상금"] * subs_count
-        st.success(f"💰 예상 보상금액: {int(merged['예상총보상금'].sum()):,}원")
+        st.success(f"예상 보상금액: {int(merged['예상총보상금'].sum()):,}원")
 
         show_cols = ["자치구", "피해점수_사전", "피해점수", "H", "위험등급", "보상금", "가입자수", "예상총보상금"]
-        st.markdown("#### 💡 자치구별 피해점수 비교")
+        st.markdown("#### 자치구별 피해점수 비교")
         st.dataframe(
             merged[show_cols],
             use_container_width=True
         )
 
-        st.markdown("#### 📊 피해점수 분포 (사후 기준)")
+        st.markdown("#### 피해점수 분포 (사후 기준)")
         st.bar_chart(data=merged_all.set_index("자치구")["피해점수"])
 
-        # ✅ 단일 자치구 디버깅 로그
+        # 단일 자치구 디버깅 로그
         row = merged.iloc[0]
         single_log = format_debug_log(row, ymd)
 
-        with st.expander(f"🔎 {selected_gu} 디버깅 로그"):
+        with st.expander(f"{selected_gu} 디버깅 로그"):
             st.code(single_log, language="text")
             st.download_button(
-                label="📄 현재 자치구 디버깅 로그 다운로드",
+                label="현재 자치구 디버깅 로그 다운로드",
                 data=single_log.encode("utf-8-sig"),
                 file_name=f"피해점수_디버깅_{ymd}_{selected_gu}.txt",
                 mime="text/plain"
             )
 
-        # ✅ 전체 자치구 디버깅 로그
+        # 전체 자치구 디버깅 로그
         all_debug_logs = "\n".join([
             format_debug_log(row, ymd) for _, row in merged_all.iterrows()
         ])
         st.download_button(
-            label="📥 전체 자치구 디버깅 로그 다운로드",
+            label="전체 자치구 디버깅 로그 다운로드",
             data=all_debug_logs.encode("utf-8-sig"),
             file_name=f"전체_피해점수_디버깅_{ymd}.txt",
             mime="text/plain"
         )
 
     except Exception as e:
-        st.error(f"❌ 처리 중 오류가 발생했습니다: {e}")
+        st.error(f"처리 중 오류가 발생했습니다: {e}")
