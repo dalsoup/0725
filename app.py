@@ -54,9 +54,6 @@ with tab1:
         👉 [온열질환 응급실감시체계 다운로드](https://www.kdca.go.kr/board/board.es?mid=a20205030102&bid=0004&&cg_code=C01)
 """)
 
-    ---
-    📌 **이 탭에서 수행하는 일은 다음과 같습니다:**
-
     region = st.selectbox("🌐 광역시도 선택", ["서울특별시"], key="region_tab1")
 
     all_gus = [
