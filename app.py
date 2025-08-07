@@ -397,8 +397,10 @@ with tab3:
 [E 계산] - 열섬지수 = {row['열섬지수_std']:.4f}, 녹지율 = {row['녹지율_std']:.4f}, 냉방보급률 = {row['냉방보급률_std']:.4f} → E = {row['E']:.4f}
 [P 계산] - 예측환자수 = {row['P_pred_raw']:.2f}명 → 정규화(P_pred) = {row['P_pred']:.4f}
 [R 계산] - 실제환자수 = {row['환자수']}, 변환(P_real) = {1.0 if row['환자수'] >= 1 else 0.0}
+[H 계산] - 폭염가중치 = {row['H']:.2f}
 🧮 사전점수 = {row['피해점수_사전']:.2f} / 사후점수 = {row['피해점수']:.2f} / 위험등급: {row['위험등급']} / 보상금: {row['보상금']}원
 """
+
 
     def calculate_social_index(row):
         return (
