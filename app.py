@@ -29,147 +29,18 @@ GITHUB_FILENAME = "ML_asos_dataset.csv"
 
 # ----------------------- 🧭 UI 시작 -----------------------
 st.title("HeatAI")
-tab1, tab2, tab3 = st.tabs(["📊 폭염 예측 및 위험도 분석", "📥 실제 피해 기록 및 데이터 입력", "📍 자치구별 피해점수 및 보상 분석"])
+tab1, tab2, tab3 = st.tabs(["📥 실제 피해 기록 및 데이터 입력", "📊 폭염 예측 및 위험도 분석", "📍 자치구별 피해점수 및 보상 분석"])
 
 with tab1:
-    def get_last_year_patient_count(current_date, region):
-        try:
-            last_year_date = (current_date - datetime.timedelta(days=365)).strftime("%Y-%m-%d")
-            static_file = "ML_static_dataset.csv"
-            df_all = pd.read_csv(static_file, encoding="cp949")
-
-            if "일시" in df_all.columns and pd.api.types.is_numeric_dtype(df_all["일시"]):
-                df_all["일시"] = pd.to_datetime("1899-12-30") + pd.to_timedelta(df_all["일시"], unit="D")
-                df_all["일자"] = df_all["일시"].dt.strftime("%Y-%m-%d")
-            elif "일자" not in df_all.columns and "일시" in df_all.columns:
-                 df_all["일자"] = pd.to_datetime(df_all["일시"]).dt.strftime("%Y-%m-%d")
-
-
-            cond = (df_all["일자"] == last_year_date) & (df_all["광역자치단체"] == region)
-            row = df_all[cond]
-            return int(row["환자수"].values[0]) if not row.empty else None
-
-        except Exception as e:
-            st.warning(f"⚠️ 작년 환자수 불러오기 오류: {e}")
-            return None
-
     # ✅ 사용법 안내
     with st.expander("📊 tab1에서 입력된 정보는 이렇게 활용됩니다"):
-        st.markdown("""
-        1. 기상청의 단기예보 API를 통해 자동으로 수집된 기상 정보를 바탕으로,  
-           AI가 선택한 지역의 예측 온열질환자 수를 산출합니다.
-
-        2. 예측 모델은 4개년 7,8월의 실제 기상 조건과 온열질환자 수 데이터를 학습했습니다.  
-           현재 입력된 기상 조건이 과거 어떤 날과 유사한지를 바탕으로  
-           AI가 발생 가능성이 높은 환자 수를 추정합니다.
-
-        3. 예측된 환자 수는 위험도 등급(🟢~🔥)으로 변환되어 시민에게 전달되며,  
-           tab3의 자치구별 피해점수 계산에 활용되는 입력값(P_pred)으로도 사용됩니다.
-
-        📍 기상청 예보는 지점 단위(광역시도) 기준으로 제공되므로,  
-        현재는 자치구 단위가 아닌 광역시도 단위로만 예측이 가능합니다.
-
-        📅 예측 가능한 날짜는 2025년 7월 1일부터 8월 31일까지입니다.
-        """)
-
-    # ✅ 날짜 선택 범위 설정
-    min_pred_date = datetime.date(2025, 7, 1)
-    max_pred_date = datetime.date(2025, 8, 31)
-
-    # ✅ 지역 및 날짜 선택 UI
-    region = st.selectbox("지역 선택", list(region_to_stn_id.keys()), key="region_tab1")
-    date_selected = st.date_input("날짜 선택", value=min_pred_date, min_value=min_pred_date, max_value=max_pred_date, key="date_tab1")
-
-    # ✅ 예측 버튼 클릭 시 실행
-    if st.button("🔍 예측하기", key="predict_tab1"):
-        today = datetime.date.today()
-
-        if date_selected >= today:
-            weather, base_date, base_time = get_weather(region, date_selected, KMA_API_KEY)
-        else:
-            ymd = date_selected.strftime("%Y%m%d")
-            weather = get_asos_weather(region, ymd, ASOS_API_KEY)
-
-        if not weather:
-            st.error("❌ 기상 정보 없음")
-            st.stop()
-
-        tmx = weather.get("TMX", 0)
-        tmn = weather.get("TMN", 0)
-        reh = weather.get("REH", 0)
-
-        pred, avg_temp, heat_index, input_df = predict_from_weather(tmx, tmn, reh)
-        risk = get_risk_level(pred)
-
-        with st.expander("🧪 입력값 확인"):
-            st.dataframe(input_df)
-
-        st.markdown("#### 💡 예측 결과")
-        c1, c2 = st.columns(2)
-        c1.metric("예측 환자 수", f"{pred:.2f}명")
-        c2.metric("위험 등급", risk)
-
-        last_year_count = get_last_year_patient_count(date_selected, region)
-        if last_year_count is not None:
-            delta = pred - last_year_count
-            st.markdown(f"""
-            📅 **전년도({(date_selected - datetime.timedelta(days=365)).strftime('%Y-%m-%d')}) 동일 날짜 환자수**: **{last_year_count}명**  
-            📈 **전년 대비 증가**: {'+' if delta >= 0 else ''}{delta:.1f}명
-            """)
-        else:
-            st.info("ℹ️ 전년도 동일 날짜의 환자 수 데이터를 찾을 수 없습니다.")
-
-        SAVE_FILE = "ML_asos_total_prediction.csv"
-        today_str = date_selected.strftime("%Y-%m-%d")
-
-        try:
-            df_total = pd.read_csv(SAVE_FILE, encoding="utf-8-sig")
-        except FileNotFoundError:
-            df_total = pd.DataFrame(columns=["일자", "서울시예측환자수"])
-
-        new_row = pd.DataFrame([{ "일자": today_str, "서울시예측환자수": round(pred, 2) }])
-        df_total = pd.concat([df_total, new_row], ignore_index=True)
-        df_total.to_csv(SAVE_FILE, index=False, encoding="utf-8-sig")
-        st.success(f"✅ 예측값이 '{SAVE_FILE}'에 저장되었습니다.")
-
-        with open(SAVE_FILE, "rb") as f:
-            content = f.read()
-        b64_content = base64.b64encode(content).decode("utf-8")
-
-        api_url = f"https://api.github.com/repos/{GITHUB_USERNAME}/{GITHUB_REPO}/contents/{SAVE_FILE}"
-        r = requests.get(api_url, headers={"Authorization": f"Bearer {GITHUB_TOKEN}"})
-        sha = r.json().get("sha") if r.status_code == 200 else None
-
-        payload = {
-            "message": f"[tab1] {date_selected} 예측값 업데이트",
-            "content": b64_content,
-            "branch": GITHUB_BRANCH
-        }
-        if sha:
-            payload["sha"] = sha
-
-        headers = {
-            "Authorization": f"Bearer {GITHUB_TOKEN}",
-            "Accept": "application/vnd.github+json"
-        }
-        r = requests.put(api_url, headers=headers, json=payload)
-
-        if r.status_code in [200, 201]:
-            st.success("✅ GitHub에 예측값 저장 완료")
-            st.info(f"🔗 [GitHub에서 확인하기](https://github.com/{GITHUB_USERNAME}/{GITHUB_REPO}/blob/{GITHUB_BRANCH}/{SAVE_FILE})")
-        else:
-            st.warning(f"⚠️ GitHub 저장 실패: {r.status_code} / {r.text[:200]}")
-
-with tab2:
-    # ✅ 사용법 안내
-    with st.expander("📊 tab2에서 입력된 정보는 이렇게 활용됩니다"):
         st.markdown("""
         1. 서울특별시 각 자치구의 **실제 폭염 피해 여부(1 또는 0)**를 수집하여,  
            **tab3의 피해점수 계산**에 활용됩니다.  
            (※ 온열질환자 수가 **1명 이상 발생한 경우 → 피해 발생(1)**로 간주합니다.)
 
         2. 실제 기상조건과 온열질환자 수를 함께 저장하여,  
-           **tab1의 머신러닝 예측 모델 학습 데이터로 자동 반영**됩니다.
+           **tab2의 머신러닝 예측 모델 학습 데이터로 자동 반영**됩니다.
 
         📅 **정확한 피해 판단을 위해 오늘 날짜는 제외되며, 어제까지의 정보만 저장할 수 있습니다.**  
         이는 질병관리청의 온열질환자 통계가 **하루 단위로 집계되어 익일에 공개**되기 때문입니다.
@@ -181,14 +52,14 @@ with tab2:
         입력된 데이터는 자동으로 내부 DB에 기록되어 다른 탭에서 즉시 활용됩니다.
         """)
 
-    region = st.selectbox("🌐 광역시도 선택", ["서울특별시"], key="region_tab2")
+    region = st.selectbox("🌐 광역시도 선택", ["서울특별시"], key="region_tab1")
 
     all_gus = [
         '종로구', '중구', '용산구', '성동구', '광진구', '동대문구', '중랑구', '성북구', '강북구', '도봉구',
         '노원구', '은평구', '서대문구', '마포구', '양천구', '강서구', '구로구', '금천구', '영등포구',
         '동작구', '관악구', '서초구', '강남구', '송파구', '강동구'
     ]
-    gus = st.multiselect("🏘️ 자치구 선택 (선택하지 않으면 전체)", all_gus, key="gu_tab2_multi")
+    gus = st.multiselect("🏘️ 자치구 선택 (선택하지 않으면 전체)", all_gus, key="gu_tab1_multi")
     if not gus:
         gus = all_gus
 
@@ -200,10 +71,10 @@ with tab2:
         value=max_record_date, 
         min_value=min_record_date, 
         max_value=max_record_date,
-        key="date_tab2"
+        key="date_tab1"
     )
 
-    uploaded_file = st.file_uploader("📎 질병청 환자수 파일 업로드 (.xlsx, 시트명: 서울특별시)", type=["xlsx"], key="upload_tab2")
+    uploaded_file = st.file_uploader("📎 질병청 환자수 파일 업로드 (.xlsx, 시트명: 서울특별시)", type=["xlsx"], key="upload_tab1")
 
     if uploaded_file and date_selected:
         try:
@@ -255,7 +126,7 @@ with tab2:
             st.markdown("#### ✅ 저장될 학습 데이터 미리보기")
             st.dataframe(preview_df)
 
-            if st.button("💾 GitHub에 저장하고 모델 재학습하기", key="save_and_train_tab2"):
+            if st.button("💾 GitHub에 저장하고 모델 재학습하기", key="save_and_train_tab1"):
                 csv_path = "ML_asos_dataset.csv"
 
                 if os.path.exists(csv_path):
@@ -316,6 +187,136 @@ with tab2:
 
         except Exception as e:
             st.error(f"❌ 처리 중 오류 발생: {e}")
+
+with tab2:
+    def get_last_year_patient_count(current_date, region):
+        try:
+            last_year_date = (current_date - datetime.timedelta(days=365)).strftime("%Y-%m-%d")
+            static_file = "ML_static_dataset.csv"
+            df_all = pd.read_csv(static_file, encoding="cp949")
+
+            if "일시" in df_all.columns and pd.api.types.is_numeric_dtype(df_all["일시"]):
+                df_all["일시"] = pd.to_datetime("1899-12-30") + pd.to_timedelta(df_all["일시"], unit="D")
+                df_all["일자"] = df_all["일시"].dt.strftime("%Y-%m-%d")
+            elif "일자" not in df_all.columns and "일시" in df_all.columns:
+                 df_all["일자"] = pd.to_datetime(df_all["일시"]).dt.strftime("%Y-%m-%d")
+
+
+            cond = (df_all["일자"] == last_year_date) & (df_all["광역자치단체"] == region)
+            row = df_all[cond]
+            return int(row["환자수"].values[0]) if not row.empty else None
+
+        except Exception as e:
+            st.warning(f"⚠️ 작년 환자수 불러오기 오류: {e}")
+            return None
+
+    # ✅ 사용법 안내
+    with st.expander("📊 tab2에서 입력된 정보는 이렇게 활용됩니다"):
+        st.markdown("""
+        1. 기상청의 단기예보 API를 통해 자동으로 수집된 기상 정보를 바탕으로,  
+           AI가 선택한 지역의 예측 온열질환자 수를 산출합니다.
+
+        2. 예측 모델은 4개년 7,8월의 실제 기상 조건과 온열질환자 수 데이터를 학습했습니다.  
+           현재 입력된 기상 조건이 과거 어떤 날과 유사한지를 바탕으로  
+           AI가 발생 가능성이 높은 환자 수를 추정합니다.
+
+        3. 예측된 환자 수는 위험도 등급(🟢~🔥)으로 변환되어 시민에게 전달되며,  
+           tab3의 자치구별 피해점수 계산에 활용되는 입력값(P_pred)으로도 사용됩니다.
+
+        📍 기상청 예보는 지점 단위(광역시도) 기준으로 제공되므로,  
+        현재는 자치구 단위가 아닌 광역시도 단위로만 예측이 가능합니다.
+
+        📅 예측 가능한 날짜는 2025년 7월 1일부터 8월 31일까지입니다.
+        """)
+
+    # ✅ 날짜 선택 범위 설정
+    min_pred_date = datetime.date(2025, 7, 1)
+    max_pred_date = datetime.date(2025, 8, 31)
+
+    # ✅ 지역 및 날짜 선택 UI
+    region = st.selectbox("지역 선택", list(region_to_stn_id.keys()), key="region_tab2")
+    date_selected = st.date_input("날짜 선택", value=min_pred_date, min_value=min_pred_date, max_value=max_pred_date, key="date_tab2")
+
+    # ✅ 예측 버튼 클릭 시 실행
+    if st.button("🔍 예측하기", key="predict_tab2"):
+        today = datetime.date.today()
+
+        if date_selected >= today:
+            weather, base_date, base_time = get_weather(region, date_selected, KMA_API_KEY)
+        else:
+            ymd = date_selected.strftime("%Y%m%d")
+            weather = get_asos_weather(region, ymd, ASOS_API_KEY)
+
+        if not weather:
+            st.error("❌ 기상 정보 없음")
+            st.stop()
+
+        tmx = weather.get("TMX", 0)
+        tmn = weather.get("TMN", 0)
+        reh = weather.get("REH", 0)
+
+        pred, avg_temp, heat_index, input_df = predict_from_weather(tmx, tmn, reh)
+        risk = get_risk_level(pred)
+
+        with st.expander("🧪 입력값 확인"):
+            st.dataframe(input_df)
+
+        st.markdown("#### 💡 예측 결과")
+        c1, c2 = st.columns(2)
+        c1.metric("예측 환자 수", f"{pred:.2f}명")
+        c2.metric("위험 등급", risk)
+
+        last_year_count = get_last_year_patient_count(date_selected, region)
+        if last_year_count is not None:
+            delta = pred - last_year_count
+            st.markdown(f"""
+            📅 **전년도({(date_selected - datetime.timedelta(days=365)).strftime('%Y-%m-%d')}) 동일 날짜 환자수**: **{last_year_count}명**  
+            📈 **전년 대비 증가**: {'+' if delta >= 0 else ''}{delta:.1f}명
+            """)
+        else:
+            st.info("ℹ️ 전년도 동일 날짜의 환자 수 데이터를 찾을 수 없습니다.")
+
+        SAVE_FILE = "ML_asos_total_prediction.csv"
+        today_str = date_selected.strftime("%Y-%m-%d")
+
+        try:
+            df_total = pd.read_csv(SAVE_FILE, encoding="utf-8-sig")
+        except FileNotFoundError:
+            df_total = pd.DataFrame(columns=["일자", "서울시예측환자수"])
+
+        new_row = pd.DataFrame([{ "일자": today_str, "서울시예측환자수": round(pred, 2) }])
+        df_total = pd.concat([df_total, new_row], ignore_index=True)
+        df_total.to_csv(SAVE_FILE, index=False, encoding="utf-8-sig")
+        st.success(f"✅ 예측값이 '{SAVE_FILE}'에 저장되었습니다.")
+
+        with open(SAVE_FILE, "rb") as f:
+            content = f.read()
+        b64_content = base64.b64encode(content).decode("utf-8")
+
+        api_url = f"https://api.github.com/repos/{GITHUB_USERNAME}/{GITHUB_REPO}/contents/{SAVE_FILE}"
+        r = requests.get(api_url, headers={"Authorization": f"Bearer {GITHUB_TOKEN}"})
+        sha = r.json().get("sha") if r.status_code == 200 else None
+
+        payload = {
+            "message": f"[tab2] {date_selected} 예측값 저장",
+            "content": b64_content,
+            "branch": GITHUB_BRANCH
+        }
+        if sha:
+            payload["sha"] = sha
+
+        headers = {
+            "Authorization": f"Bearer {GITHUB_TOKEN}",
+            "Accept": "application/vnd.github+json"
+        }
+        r = requests.put(api_url, headers=headers, json=payload)
+
+        if r.status_code in [200, 201]:
+            st.success("✅ GitHub에 예측값 저장 완료")
+            st.info(f"🔗 [GitHub에서 확인하기](https://github.com/{GITHUB_USERNAME}/{GITHUB_REPO}/blob/{GITHUB_BRANCH}/{SAVE_FILE})")
+        else:
+            st.warning(f"⚠️ GitHub 저장 실패: {r.status_code} / {r.text[:200]}")
+
 
 with tab3:
     # ✅ 사용법 안내
