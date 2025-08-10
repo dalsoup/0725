@@ -155,3 +155,110 @@ def get_fixed_base_datetime(target_date):
         return today.strftime("%Y%m%d"), bt
     else:
         return today.strftime("%Y%m%d"), "0500"
+
+
+KMA_ULTRA_BASE = "http://apis.data.go.kr/1360000/"  # 초단기 실황/예보 공통
+
+@st.cache_data(ttl=300)
+def _reverse_geocode_to_gu(lat: float, lon: float) -> dict:
+    """좌표 → 행정구역(자치구) 역지오코딩 (Nominatim)
+    return: {"gu": "송파구", "city": "서울특별시"} (실패 시 {})
+    """
+    try:
+        url = "https://nominatim.openstreetmap.org/reverse"
+        params = {
+            "format": "jsonv2",
+            "lat": lat,
+            "lon": lon,
+            "addressdetails": 1,
+            "zoom": 14,
+        }
+        r = requests.get(url, params=params, headers={"User-Agent": "weatherpay/1.0"}, timeout=8)
+        data = r.json()
+        addr = data.get("address", {})
+        # 서울 내 자치구는 district 또는 city_district 에 담기는 경우가 많음
+        gu = addr.get("city_district") or addr.get("district") or addr.get("county") or ""
+        city = addr.get("city") or addr.get("state") or addr.get("region") or ""
+        # 한글 'OO구' 형태 정제
+        if gu and not gu.endswith("구"):
+            if gu.endswith("-gu"):  # e.g., Gangnam-gu
+                gu = gu.replace("-gu", "구")
+        # 서울 명시 정제
+        if city in ("Seoul", "Seoul Metropolitan City"):
+            city = "서울특별시"
+        return {"gu": gu, "city": city}
+    except Exception:
+        return {}
+
+@st.cache_data(ttl=180)
+def _get_ultra_now(nx: int, ny: int, KMA_API_KEY: str) -> dict:
+    """초단기실황(getUltraSrtNcst): 현재시각 기준 REH(습도)와 T1H(기온) 조회"""
+    # 기상청 권장: 관측 시각 반영 지연 보정(40~70분) → 40분 이전 시각으로 요청
+    now = dt.datetime.now() - dt.timedelta(minutes=40)
+    base_date = now.strftime("%Y%m%d")
+    base_time = now.strftime("%H%M")[:2] + "00"  # 정시
+    params = {
+        "serviceKey": KMA_API_KEY,
+        "dataType": "JSON",
+        "numOfRows": "100",
+        "pageNo": "1",
+        "base_date": base_date,
+        "base_time": base_time,
+        "nx": nx,
+        "ny": ny,
+    }
+    url = KMA_ULTRA_BASE + "VilageFcstInfoService_2.0/getUltraSrtNcst"
+    try:
+        r = requests.get(url, params=params, timeout=8, verify=False)
+        items = r.json().get("response", {}).get("body", {}).get("items", {}).get("item", [])
+        reh = None
+        t1h = None
+        for it in items:
+            cat = it.get("category")
+            try:
+                val = float(it.get("obsrValue"))
+            except (TypeError, ValueError):
+                continue
+            if cat == "REH":
+                reh = val
+            elif cat == "T1H":
+                t1h = val
+        return {"REH": reh, "T1H": t1h, "base_date": base_date, "base_time": base_time}
+    except Exception:
+        return {"REH": None, "T1H": None, "base_date": base_date, "base_time": base_time}
+
+@st.cache_data(ttl=600)
+def _get_today_tmx_tmn(nx: int, ny: int, KMA_API_KEY: str, base_date: str, base_time: str) -> dict:
+    """단기예보(getVilageFcst)에서 오늘자 TMX/TMN(일 최고/최저) 추출"""
+    params = {
+        "serviceKey": KMA_API_KEY,
+        "dataType": "JSON",
+        "numOfRows": "500",
+        "pageNo": "1",
+        "base_date": base_date,
+        "base_time": base_time,
+        "nx": nx,
+        "ny": ny,
+    }
+    url = KMA_ULTRA_BASE + "VilageFcstInfoService_2.0/getVilageFcst"
+    try:
+        r = requests.get(url, params=params, timeout=8, verify=False)
+        items = r.json().get("response", {}).get("body", {}).get("items", {}).get("item", [])
+        tmx = None
+        tmn = None
+        today = dt.date.today().strftime("%Y%m%d")
+        for it in items:
+            if it.get("fcstDate") != today:
+                continue
+            cat = it.get("category")
+            try:
+                val = float(it.get("fcstValue"))
+            except (TypeError, ValueError):
+                continue
+            if cat == "TMX":
+                tmx = val
+            elif cat == "TMN":
+                tmn = val
+        return {"TMX": tmx, "TMN": tmn}
+    except Exception:
+        return {"TMX": None, "TMN": None}

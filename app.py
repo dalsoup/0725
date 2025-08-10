@@ -5,14 +5,18 @@ import requests
 import os
 import base64
 import io
-from urllib.parse import unquote
+import json
+import time
+import math
+from urllib.parse import unquote, quote
+import urllib.parse
 import subprocess
 import sys
 
 
 from utils import (
     get_weather, get_asos_weather, get_risk_level,
-    calculate_avg_temp, region_to_stn_id
+    calculate_avg_temp, region_to_stn_id,convert_latlon_to_xy, get_fixed_base_datetime
 )
 from model_utils import predict_from_weather
 
@@ -28,7 +32,7 @@ GITHUB_TOKEN = st.secrets["GITHUB"]["TOKEN"]
 GITHUB_FILENAME = "ML_asos_dataset.csv"
 
 # ----------------------- UI 시작 -----------------------
-st.title("HeatAI")
+st.title("Weather Pay")
 tab1, tab2, tab3 = st.tabs(["학습 데이터 입력", "환자 수 지표 산출", "피해점수 계산 및 보상"])
 
 with tab1:
@@ -191,138 +195,117 @@ with tab1:
         except Exception as e:
             st.error(f"처리 중 오류 발생: {e}")
 
+
 with tab2:
-    def get_last_year_patient_count(current_date, region):
-        try:
-            last_year_date = (current_date - datetime.timedelta(days=365)).strftime("%Y-%m-%d")
-            static_file = "ML_static_dataset.csv"
-            df_all = pd.read_csv(static_file, encoding="cp949")
+    st.subheader("실시간 위험 점수")
+    st.caption("내 위치(자치구) 기준으로 현재 기상조건을 반영해 온열질환 위험을 추정합니다.")
 
-            if "일시" in df_all.columns and pd.api.types.is_numeric_dtype(df_all["일시"]):
-                df_all["일시"] = pd.to_datetime("1899-12-30") + pd.to_timedelta(df_all["일시"], unit="D")
-                df_all["일자"] = df_all["일시"].dt.strftime("%Y-%m-%d")
-            elif "일자" not in df_all.columns and "일시" in df_all.columns:
-                 df_all["일자"] = pd.to_datetime(df_all["일시"]).dt.strftime("%Y-%m-%d")
-
-
-            cond = (df_all["일자"] == last_year_date) & (df_all["광역자치단체"] == region)
-            row = df_all[cond]
-            return int(row["환자수"].values[0]) if not row.empty else None
-
-        except Exception as e:
-            st.warning(f"작년 환자수 불러오기 오류: {e}")
-            return None
-
-    with st.expander("이 탭에서는 무엇을 하나요?"):
-        st.markdown("""
-        이 탭은 선택한 날짜의 기상 조건(예보 또는 실측)을 기반으로,  
-        AI 모델이 서울시 전체 예상 온열 환자 수(P_pred)를 추정합니다.
-
-        사용되는 AI 모델은:
-        - **2021~2024년의 과거 기초 학습 데이터**와,
-        - tab1을 통해 입력된 **사용자 입력 학습 데이터**를 결합하여 학습된 XGBoost 기반 모델입니다.
-
-        ---
-        **수행 내용 요약**:
-
-        1. **날짜에 따라 기상 데이터 입력 방식이 달라집니다**:
-           - 오늘 이전 날짜: ASOS 실측 기상 데이터
-           - 오늘 이후 날짜: 기상청 단기예보 API 예보 데이터
-
-        2. 입력된 기상 조건 (TMX, TMN, REH 등)을 기반으로,
-           모델은 **결정 트리 기반 예측 경로를 따라 P_pred를 정량적으로 계산**합니다.
-
-        3. 예측 결과는 `ML_asos_total_prediction.csv`에 저장되며,
-           GitHub에 자동 업로드되어 tab3에서 피해점수 계산에 즉시 연동됩니다.
-        """) 
-
-    # 날짜 선택 범위 설정
-    min_pred_date = datetime.date(2025, 7, 1)
-    max_pred_date = datetime.date(2025, 8, 31)
-
-    # 지역 및 날짜 선택 UI
-    region = st.selectbox("지역 선택", list(region_to_stn_id.keys()), key="region_tab2")
-    date_selected = st.date_input("날짜 선택", value=min_pred_date, min_value=min_pred_date, max_value=max_pred_date, key="date_tab2")
-
-    # 예측 버튼 클릭 시 실행
-    if st.button("P_pred 추정하기", key="predict_tab2"):
-        today = datetime.date.today()
-
-        if date_selected >= today:
-            weather, base_date, base_time = get_weather(region, date_selected, KMA_API_KEY)
-        else:
-            ymd = date_selected.strftime("%Y%m%d")
-            weather = get_asos_weather(region, ymd, ASOS_API_KEY)
-
-        if not weather:
-            st.error("기상 정보 없음")
-            st.stop()
-
-        tmx = weather.get("TMX", 0)
-        tmn = weather.get("TMN", 0)
-        reh = weather.get("REH", 0)
-
-        pred, avg_temp, heat_index, input_df = predict_from_weather(tmx, tmn, reh)
-        risk = get_risk_level(pred)
-
-        with st.expander("입력값 확인"):
-            st.dataframe(input_df)
-
-        st.markdown("####P_pred")
-        c1, c2 = st.columns(2)
-        c1.metric("예측 환자 수", f"{pred:.2f}명")
-        c2.metric("위험 등급", risk)
-
-        last_year_count = get_last_year_patient_count(date_selected, region)
-        if last_year_count is not None:
-            delta = pred - last_year_count
-            st.markdown(
-                    f"**전년도({(date_selected - datetime.timedelta(days=365)).strftime('%Y-%m-%d')}) 동일 날짜 환자수**: **{last_year_count}명**  \n"
-                    f"**전년 대비 증가**: {'+' if delta >= 0 else ''}{delta:.1f}명"
-)
-        else:
-            st.info("전년도 동일 날짜의 환자 수 데이터를 찾을 수 없습니다.")
-
-        SAVE_FILE = "ML_asos_total_prediction.csv"
-        today_str = date_selected.strftime("%Y-%m-%d")
-
-        try:
-            df_total = pd.read_csv(SAVE_FILE, encoding="utf-8-sig")
-        except FileNotFoundError:
-            df_total = pd.DataFrame(columns=["일자", "서울시예측환자수"])
-
-        new_row = pd.DataFrame([{ "일자": today_str, "서울시예측환자수": round(pred, 2) }])
-        df_total = pd.concat([df_total, new_row], ignore_index=True)
-        df_total.to_csv(SAVE_FILE, index=False, encoding="utf-8-sig")
-        st.success(f"예측값이 '{SAVE_FILE}'에 저장되었습니다.")
-
-        with open(SAVE_FILE, "rb") as f:
-            content = f.read()
-        b64_content = base64.b64encode(content).decode("utf-8")
-
-        api_url = f"https://api.github.com/repos/{GITHUB_USERNAME}/{GITHUB_REPO}/contents/{SAVE_FILE}"
-        r = requests.get(api_url, headers={"Authorization": f"Bearer {GITHUB_TOKEN}"})
-        sha = r.json().get("sha") if r.status_code == 200 else None
-
-        payload = {
-            "message": f"[tab2] {date_selected} 예측값 저장",
-            "content": b64_content,
-            "branch": GITHUB_BRANCH
+    # 위치 획득(실험): 브라우저 위치 권한으로 lat/lon을 쿼리스트링에 주입 → Streamlit에서 읽기
+    st.components.v1.html(
+        """
+        <script>
+        function setLoc(){
+          if(!navigator.geolocation){ alert('위치 접근이 지원되지 않습니다.'); return; }
+          navigator.geolocation.getCurrentPosition(function(pos){
+            const lat = pos.coords.latitude.toFixed(6);
+            const lon = pos.coords.longitude.toFixed(6);
+            const url = new URL(window.location.href);
+            url.searchParams.set('lat', lat);
+            url.searchParams.set('lon', lon);
+            window.location.href = url.toString();
+          }, function(err){ alert('위치 접근이 거부되었거나 실패했습니다.'); });
         }
-        if sha:
-            payload["sha"] = sha
+        </script>
+        <button onclick="setLoc()" style="padding:8px 12px;border-radius:10px;border:1px solid #ddd;cursor:pointer;">내 위치로 찾기</button>
+        """,
+        height=50,
+    )
 
-        headers = {
-            "Authorization": f"Bearer {GITHUB_TOKEN}",
-            "Accept": "application/vnd.github+json"
-        }
-        r = requests.put(api_url, headers=headers, json=payload)
+    params = st.query_params
+    lat = params.get("lat", None)
+    lon = params.get("lon", None)
 
-        if r.status_code in [200, 201]:
-            st.success("GitHub에 예측값 저장 완료")
-            st.info(f"🔗 [GitHub에서 확인하기](https://github.com/{GITHUB_USERNAME}/{GITHUB_REPO}/blob/{GITHUB_BRANCH}/{SAVE_FILE})")
+    # 수동 자치구 선택(대안)
+    seoul_gus = [
+        '종로구','중구','용산구','성동구','광진구','동대문구','중랑구','성북구','강북구','도봉구',
+        '노원구','은평구','서대문구','마포구','양천구','강서구','구로구','금천구','영등포구',
+        '동작구','관악구','서초구','강남구','송파구','강동구'
+    ]
+
+    detected_gu = None
+    if lat and lon:
+        try:
+            lat_f, lon_f = float(lat), float(lon)
+            rg = _reverse_geocode_to_gu(lat_f, lon_f)
+            if rg.get("city") == "서울특별자치시" or rg.get("city") == "서울특별시":
+                detected_gu = rg.get("gu")
+            # 서울 인접이거나 구 탐지 실패 시 가까운 구는 수동 선택 유도
+        except Exception:
+            pass
+
+    colA, colB = st.columns(2)
+    with colA:
+        if detected_gu and detected_gu in seoul_gus:
+            st.success(f"내 위치 인식: {detected_gu}")
+            selected_gu = detected_gu
         else:
-            st.warning(f"GitHub 저장 실패: {r.status_code} / {r.text[:200]}")
+            selected_gu = st.selectbox("자치구 선택", seoul_gus, index=seoul_gus.index('송파구'))
+    with colB:
+        now_kst = dt.datetime.now().strftime("%Y-%m-%d %H:%M")
+        st.write(f"기준시각(실황): **{now_kst} KST**")
+
+    # 좌표 → 격자(nx, ny) 산출: 구의 대표 좌표가 없으므로, 위치좌표 우선, 없으면 구 중심 좌표 테이블을 간단 매핑
+    gu_centers = {
+        '종로구': (37.5731,126.9793), '중구': (37.5636,126.9976), '용산구': (37.5323,126.9907), '성동구': (37.5634,127.0368),
+        '광진구': (37.5384,127.0823), '동대문구': (37.5744,127.0396), '중랑구': (37.6063,127.0927), '성북구': (37.5894,127.0167),
+        '강북구': (37.6396,127.0259), '도봉구': (37.6688,127.0471), '노원구': (37.6542,127.0568), '은평구': (37.6176,126.9227),
+        '서대문구': (37.5792,126.9368), '마포구': (37.5663,126.9018), '양천구': (37.5169,126.8665), '강서구': (37.5509,126.8495),
+        '구로구': (37.4954,126.8879), '금천구': (37.4568,126.8956), '영등포구': (37.5264,126.8963), '동작구': (37.5126,126.9393),
+        '관악구': (37.4784,126.9516), '서초구': (37.4836,127.0327), '강남구': (37.5172,127.0473), '송파구': (37.5145,127.1059),
+        '강동구': (37.5301,127.1238)
+    }
+
+    if lat and lon:
+        lat_f, lon_f = float(lat), float(lon)
+    else:
+        lat_f, lon_f = gu_centers[selected_gu]
+
+    from utils import convert_latlon_to_xy, get_fixed_base_datetime, get_risk_level
+    nx, ny = convert_latlon_to_xy(lat_f, lon_f)
+
+    # 초단기 실황으로 현재 REH/T1H 수집
+    ultra = _get_ultra_now(nx, ny, KMA_API_KEY)
+
+    # 단기예보에서 오늘 TMX/TMN 수집(기반시각은 utils의 규칙 사용)
+    base_date, base_time = get_fixed_base_datetime(dt.date.today())
+    tmx_tmn = _get_today_tmx_tmn(nx, ny, KMA_API_KEY, base_date, base_time)
+
+    # 예측 입력값 구성: TMX/TMN(일예보) + REH(실황), 보정 로직(없으면 T1H로 대체)
+    tmx = tmx_tmn.get("TMX") or ultra.get("T1H")
+    tmn = tmx_tmn.get("TMN") or ultra.get("T1H")
+    reh = ultra.get("REH")
+
+    if not all(v is not None for v in [tmx, tmn, reh]):
+        st.error("실시간 기상 입력을 충분히 확보하지 못했습니다. 잠시 후 다시 시도해주세요.")
+        st.stop()
+
+    # 모델 예측
+    from model_utils import predict_from_weather
+    pred, avg_temp, heat_index, input_df = predict_from_weather(tmx, tmn, reh)
+    risk = get_risk_level(pred)
+
+    st.markdown("#### 입력값(실시간)")
+    st.dataframe(input_df)
+
+    c1, c2, c3 = st.columns(3)
+    c1.metric("자치구", selected_gu)
+    c2.metric("예측 환자 수(도시기준)", f"{pred:.2f}명")
+    c3.metric("위험 등급", risk)
+
+    st.info(
+        "무더위 휴식시간 준수, 수분·그늘·휴식 확보, 냉방 취약계층 보호를 권고합니다. 더 자세한 보상·피해점수는 Tab3에서 확인하세요."
+    )
+
 
 
 with tab3:
