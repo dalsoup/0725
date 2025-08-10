@@ -198,77 +198,72 @@ with tab1:
 
 
 with tab2:
+    def _get_ultra_now(nx: int, ny: int, api_key: str):
+        """기상청 초단기실황(REH, T1H)을 조회해 dict로 반환"""
+        now = dt.datetime.now() - dt.timedelta(minutes=40)  # 발표시각 보정
+        base_date = now.strftime("%Y%m%d")
+        base_time = now.strftime("%H%M")
 
-def _get_ultra_now(nx: int, ny: int, api_key: str):
-    """기상청 초단기실황(REH, T1H)을 조회해 dict로 반환"""
-    now = dt.datetime.now() - dt.timedelta(minutes=40)  # 발표시각 보정
-    base_date = now.strftime("%Y%m%d")
-    base_time = now.strftime("%H%M")
+        url = "http://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getUltraSrtNcst"
+        params = {
+            "serviceKey": api_key,
+            "numOfRows": "1000",
+            "pageNo": "1",
+            "dataType": "JSON",
+            "base_date": base_date,
+            "base_time": base_time,
+            "nx": nx,
+            "ny": ny,
+        }
+        try:
+            r = requests.get(url, params=params, timeout=10, verify=False)
+            items = r.json().get("response", {}).get("body", {}).get("items", {}).get("item", [])
+            out = {}
+            for it in items:
+                cat = it.get("category")
+                if cat in ("REH", "T1H"):
+                    out[cat] = float(it.get("obsrValue"))
+            return out
+        except Exception:
+            return {}
 
-    url = "http://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getUltraSrtNcst"
-    params = {
-        "serviceKey": api_key,
-        "numOfRows": "1000",
-        "pageNo": "1",
-        "dataType": "JSON",
-        "base_date": base_date,
-        "base_time": base_time,
-        "nx": nx,
-        "ny": ny,
-    }
-    try:
-        r = requests.get(url, params=params, timeout=10, verify=False)
-        items = r.json().get("response", {}).get("body", {}).get("items", {}).get("item", [])
-        out = {}
-        for it in items:
-            cat = it.get("category")
-            if cat in ("REH", "T1H"):
-                out[cat] = float(it.get("obsrValue"))
-        return out
-    except Exception:
+    def _get_today_tmx_tmn(nx: int, ny: int, api_key: str, base_date: str, base_time: str):
+        """단기예보에서 TMX/TMN을 조회해 dict로 반환 (없으면 빈 dict)"""
+        url = "http://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getVilageFcst"
+        params = {
+            "serviceKey": api_key,
+            "numOfRows": "1000",
+            "pageNo": "1",
+            "dataType": "JSON",
+            "base_date": base_date,
+            "base_time": base_time,
+            "nx": nx,
+            "ny": ny,
+        }
+        try:
+            r = requests.get(url, params=params, timeout=10, verify=False)
+            items = r.json().get("response", {}).get("body", {}).get("items", {}).get("item", [])
+            today_str = dt.date.today().strftime("%Y%m%d")
+            tmx = tmn = None
+            for it in items:
+                if it.get("fcstDate") != today_str:
+                    continue
+                if it.get("category") == "TMX":
+                    tmx = float(it.get("fcstValue"))
+                elif it.get("category") == "TMN":
+                    tmn = float(it.get("fcstValue"))
+            out = {}
+            if tmx is not None:
+                out["TMX"] = tmx
+            if tmn is not None:
+                out["TMN"] = tmn
+            return out
+        except Exception:
+            return {}
+
+    def _reverse_geocode_to_gu(lat: float, lon: float) -> dict:
+        """좌표 -> {'city': '서울특별시', 'gu': '송파구'} 형태."""
         return {}
-
-def _get_today_tmx_tmn(nx: int, ny: int, api_key: str, base_date: str, base_time: str):
-    """단기예보에서 TMX/TMN을 조회해 dict로 반환 (없으면 빈 dict)"""
-    url = "http://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getVilageFcst"
-    params = {
-        "serviceKey": api_key,
-        "numOfRows": "1000",
-        "pageNo": "1",
-        "dataType": "JSON",
-        "base_date": base_date,
-        "base_time": base_time,
-        "nx": nx,
-        "ny": ny,
-    }
-    try:
-        r = requests.get(url, params=params, timeout=10, verify=False)
-        items = r.json().get("response", {}).get("body", {}).get("items", {}).get("item", [])
-        # 오늘 날짜만 필터
-        today_str = dt.date.today().strftime("%Y%m%d")
-        tmx = tmn = None
-        for it in items:
-            if it.get("fcstDate") != today_str:
-                continue
-            if it.get("category") == "TMX":
-                tmx = float(it.get("fcstValue"))
-            elif it.get("category") == "TMN":
-                tmn = float(it.get("fcstValue"))
-        out = {}
-        if tmx is not None:
-            out["TMX"] = tmx
-        if tmn is not None:
-            out["TMN"] = tmn
-        return out
-    except Exception:
-        return {}
-
-def _reverse_geocode_to_gu(lat: float, lon: float) -> dict:
-    """
-    좌표 -> {'city': '서울특별시', 'gu': '송파구'} 형태.
-    외부 키가 없으니 더미 구현: 항상 빈 dict 반환(수동 선택 분기로 유도)
-    """
-    return {}
 
     st.subheader("실시간 위험 점수")
     st.caption("내 위치(자치구) 기준으로 현재 기상조건을 반영해 온열질환 위험을 추정합니다.")
