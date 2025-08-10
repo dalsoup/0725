@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import datetime
 import datetime as dt
+KST = dt.timezone(dt.timedelta(hours=9))
 import requests
 import os
 import base64
