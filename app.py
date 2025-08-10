@@ -206,8 +206,10 @@ with tab2:
             hh = ref.strftime("%H")
             mm = "30" if ref.minute >= 30 else "00"
             d0 = ref.strftime("%Y%m%d")
-            c = [(d0, f"{hh}{mm}"),
-                 (d0, f"{hh}{'00' if mm=='30' else '30'})"]
+            c = [
+                  (d0, f"{hh}{mm}"),
+                  (d0, f"{hh}{'00' if mm=='30' else '30'})",
+            ]
             prev = ref - dt.timedelta(hours=1)
             d1, h1 = prev.strftime("%Y%m%d"), prev.strftime("%H")
             c += [(d1, f"{h1}30"), (d1, f"{h1}00")]
