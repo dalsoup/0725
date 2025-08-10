@@ -3,6 +3,7 @@ import pandas as pd
 import datetime
 import datetime as dt  # ← dt 별칭 추가
 import math
+from urllib.parse import unquote
 
 # ---- Streamlit cache 안전 래퍼 ----
 try:
@@ -75,9 +76,11 @@ def get_weather(region_name, target_date, KMA_API_KEY):
         "ny": ny
     }
     try:
-        r = requests.get(
-            "http://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getVilageFcst",
-            params=params, timeout=10, verify=False
+        r = requests.get(..., params=params, timeout=10)
+        r.raise_for_status()
+        resp = r.json().get("response", {})
+        if resp.get("header", {}).get("resultCode") != "00":
+            return {}, base_date, base_time
         )
         items = r.json().get("response", {}).get("body", {}).get("items", {}).get("item", [])
         df = pd.DataFrame(items)
@@ -153,22 +156,25 @@ def convert_latlon_to_xy(lat, lon):
     y = ro - ra * math.cos(theta) + YO + 0.5
     return int(x), int(y)
 
-def get_fixed_base_datetime(target_date):
-    today = datetime.date.today()
-    now = datetime.datetime.now()
-    if target_date == today:
+def get_fixed_base_datetime(target_date: datetime.date):
+    KST = dt.timezone(dt.timedelta(hours=9))
+    now = dt.datetime.now(dt.timezone.utc).astimezone(KST)
+    today_kst = now.date()
+
+    if target_date == today_kst:
         hour = now.hour
-        if hour >= 23: bt = "2300"
+        if   hour >= 23: bt = "2300"
         elif hour >= 20: bt = "2000"
         elif hour >= 17: bt = "1700"
         elif hour >= 14: bt = "1400"
         elif hour >= 11: bt = "1100"
-        elif hour >= 8: bt = "0800"
-        elif hour >= 5: bt = "0500"
-        else: bt = "0200"
-        return today.strftime("%Y%m%d"), bt
+        elif hour >= 8:  bt = "0800"
+        elif hour >= 5:  bt = "0500"
+        else:            bt = "0200"
+        return target_date.strftime("%Y%m%d"), bt
     else:
-        return today.strftime("%Y%m%d"), "0500"
+        # 과거/미래 조회용: target_date 유지
+        return target_date.strftime("%Y%m%d"), "0500"
 
 # -------- 초단기/예보 보조 --------
 KMA_ULTRA_BASE = "http://apis.data.go.kr/1360000/"
@@ -192,22 +198,36 @@ def _reverse_geocode_to_gu(lat: float, lon: float) -> dict:
     except Exception:
         return {}
 
-@st.cache_data(ttl=180)
+@cache_data(ttl=180)  
 def _get_ultra_now(nx: int, ny: int, KMA_API_KEY: str) -> dict:
-    """기상청 초단기실황(REH, T1H) 조회.
-    - 40분 룰: 09:28 → base_time=0900
-    - 데이터 없으면 한 시간 전 정시로 폴백
-    """
-    def compute_base_kst():
-        kst = dt.timezone(dt.timedelta(hours=9))
-        now_kst = dt.datetime.now(dt.UTC).astimezone(kst)
+    """기상청 초단기실황(REH, T1H) 조회 (00/30 교차 + 전시간 폴백, resultCode 체크)."""
+    KST = dt.timezone(dt.timedelta(hours=9))
+
+    def compute_candidates():
+        now_kst = dt.datetime.now(dt.timezone.utc).astimezone(KST)
         ref = now_kst - dt.timedelta(minutes=40)
-        return ref.strftime("%Y%m%d"), ref.strftime("%H") + "00"
+        hh = ref.strftime("%H")
+        mm = "30" if ref.minute >= 30 else "00"
+        base_date = ref.strftime("%Y%m%d")
+
+        cands = [(base_date, f"{hh}{mm}")]
+        cands.append((base_date, f"{hh}{'00' if mm == '30' else '30'}"))
+
+        prev = ref - dt.timedelta(hours=1)
+        cands.append((prev.strftime("%Y%m%d"), f"{prev.strftime('%H')}30"))
+        cands.append((prev.strftime("%Y%m%d"), f"{prev.strftime('%H')}00"))
+
+        seen, uniq = set(), []
+        for d, t in cands:
+            k = d + t
+            if k not in seen:
+                seen.add(k); uniq.append((d, t))
+        return uniq
 
     def call_api(base_date: str, base_time: str):
         url = KMA_ULTRA_BASE + "VilageFcstInfoService_2.0/getUltraSrtNcst"
         params = {
-            "serviceKey": KMA_API_KEY,
+            "serviceKey": unquote(KMA_API_KEY),  # 🔐 디코딩
             "dataType": "JSON",
             "numOfRows": "100",
             "pageNo": "1",
@@ -216,40 +236,47 @@ def _get_ultra_now(nx: int, ny: int, KMA_API_KEY: str) -> dict:
             "nx": nx,
             "ny": ny,
         }
+        r = requests.get(url, params=params, timeout=8)  # verify=True 기본
+        r.raise_for_status()
+        resp = r.json().get("response", {})
+        header = resp.get("header", {})
+        if header.get("resultCode") != "00":
+            return None  # 무자료/에러
+
+        items = resp.get("body", {}).get("items", {}).get("item", [])
+        reh = t1h = None
+        for it in items:
+            cat = it.get("category")
+            try:
+                val = float(it.get("obsrValue"))
+            except (TypeError, ValueError):
+                continue
+            if cat == "REH": reh = val
+            elif cat == "T1H": t1h = val
+        if reh is None and t1h is None:
+            return None
+        # 응답의 기준시각이 있다면 그걸 우선시
+        bdate = items[0].get("baseDate", base_date) if items else base_date
+        btime = items[0].get("baseTime", base_time) if items else base_time
+        return {"REH": reh, "T1H": t1h, "base_date": bdate, "base_time": btime}
+
+    last_err = None
+    for bd, bt in compute_candidates():
         try:
-            r = requests.get(url, params=params, timeout=8, verify=False)
-            items = r.json().get("response", {}).get("body", {}).get("items", {}).get("item", [])
-            reh = t1h = None
-            for it in items:
-                cat = it.get("category")
-                try:
-                    val = float(it.get("obsrValue"))
-                except (TypeError, ValueError):
-                    continue
-                if cat == "REH": reh = val
-                elif cat == "T1H": t1h = val
-            return reh, t1h
-        except Exception:
-            return None, None
+            out = call_api(bd, bt)
+            if out: 
+                return out
+        except Exception as e:
+            last_err = e
+            continue
 
-    base_date, base_time = compute_base_kst()
-    reh, t1h = call_api(base_date, base_time)
-
-    if reh is None and t1h is None:
-        # 한 시간 전으로 폴백
-        kst = dt.timezone(dt.timedelta(hours=9))
-        base_dt = dt.datetime.strptime(base_date + base_time, "%Y%m%d%H%M").replace(tzinfo=kst)
-        fb = base_dt - dt.timedelta(hours=1)
-        base_date, base_time = fb.strftime("%Y%m%d"), fb.strftime("%H") + "00"
-        reh, t1h = call_api(base_date, base_time)
-
-    return {"REH": reh, "T1H": t1h, "base_date": base_date, "base_time": base_time}
-
+    # 모두 실패
+    return {"REH": None, "T1H": None, "base_date": None, "base_time": None}
 
 @cache_data(ttl=600)
 def _get_today_tmx_tmn(nx: int, ny: int, KMA_API_KEY: str, base_date: str, base_time: str) -> dict:
     params = {
-        "serviceKey": KMA_API_KEY,
+        "serviceKey": unquote(KMA_API_KEY),
         "dataType": "JSON",
         "numOfRows": "500",
         "pageNo": "1",
@@ -260,12 +287,19 @@ def _get_today_tmx_tmn(nx: int, ny: int, KMA_API_KEY: str, base_date: str, base_
     }
     url = KMA_ULTRA_BASE + "VilageFcstInfoService_2.0/getVilageFcst"
     try:
-        r = requests.get(url, params=params, timeout=8, verify=False)
-        items = r.json().get("response", {}).get("body", {}).get("items", {}).get("item", [])
+        r = requests.get(url, params=params, timeout=8)
+        r.raise_for_status()
+        resp = r.json().get("response", {})
+        if resp.get("header", {}).get("resultCode") != "00":
+            return {"TMX": None, "TMN": None}
+
+        items = resp.get("body", {}).get("items", {}).get("item", [])
         tmx = tmn = None
-        today = dt.date.today().strftime("%Y%m%d")
+        # KST 기준 오늘
+        KST = dt.timezone(dt.timedelta(hours=9))
+        today_kst = dt.datetime.now(dt.timezone.utc).astimezone(KST).strftime("%Y%m%d")
         for it in items:
-            if it.get("fcstDate") != today:
+            if it.get("fcstDate") != today_kst:
                 continue
             cat = it.get("category")
             try:
