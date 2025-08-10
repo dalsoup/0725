@@ -198,6 +198,39 @@ with tab1:
 
 
 with tab2:
+def _get_ultra_now(nx, ny, KMA_API_KEY):
+    """
+    기상청 초단기 실황 API 호출
+    nx, ny : 격자 좌표
+    KMA_API_KEY : 기상청 API 키
+    """
+    import requests
+    import datetime
+
+    base_date = datetime.datetime.now().strftime("%Y%m%d")
+    base_time = (datetime.datetime.now() - datetime.timedelta(minutes=40)).strftime("%H%M")
+
+    params = {
+        "serviceKey": KMA_API_KEY,
+        "numOfRows": "1000",
+        "pageNo": "1",
+        "dataType": "JSON",
+        "base_date": base_date,
+        "base_time": base_time,
+        "nx": nx,
+        "ny": ny
+    }
+
+    try:
+        url = "http://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getUltraSrtNcst"
+        r = requests.get(url, params=params, timeout=10, verify=False)
+        items = r.json().get("response", {}).get("body", {}).get("items", {}).get("item", [])
+        return items
+    except Exception as e:
+        print(f"❌ 초단기 실황 API 호출 실패: {e}")
+        return []
+
+
     st.subheader("실시간 위험 점수")
     st.caption("내 위치(자치구) 기준으로 현재 기상조건을 반영해 온열질환 위험을 추정합니다.")
 
