@@ -197,15 +197,9 @@ with tab1:
             st.error(f"처리 중 오류 발생: {e}")
 
 with tab2:
-    import datetime as dt
-    import requests
-    from urllib.parse import unquote
-
-    # ---------- 보조 함수 ----------
+    # ---------- 보조 함수들 ----------
     def _ultra_now_safe(nx: int, ny: int, api_key: str) -> dict:
-        """기상청 초단기실황(REH, T1H) 조회: 00/30 후보 + 전시간 폴백, resultCode 체크."""
-        KST = dt.timezone(dt.timedelta(hours=9))
-
+        """초단기실황 REH/T1H: 00/30 교차 + 전시간 폴백, resultCode 체크"""
         def candidates():
             now_kst = dt.datetime.now(dt.timezone.utc).astimezone(KST)
             ref = now_kst - dt.timedelta(minutes=40)
@@ -213,16 +207,16 @@ with tab2:
             mm = "30" if ref.minute >= 30 else "00"
             d0 = ref.strftime("%Y%m%d")
             c = [(d0, f"{hh}{mm}"),
-                 (d0, f"{hh}{'00' if mm=='30' else '30'}")]
+                 (d0, f"{hh}{'00' if mm=='30' else '30'})"]
             prev = ref - dt.timedelta(hours=1)
-            d1 = prev.strftime("%Y%m%d"); h1 = prev.strftime("%H")
+            d1, h1 = prev.strftime("%Y%m%d"), prev.strftime("%H")
             c += [(d1, f"{h1}30"), (d1, f"{h1}00")]
+            # 중복 제거
             seen, out = set(), []
             for bd, bt in c:
                 k = bd + bt
                 if k not in seen:
-                    seen.add(k)
-                    out.append((bd, bt))
+                    seen.add(k); out.append((bd, bt))
             return out
 
         def call(bd, bt):
@@ -267,7 +261,7 @@ with tab2:
         return {"REH": None, "T1H": None, "base_date": None, "base_time": None}
 
     def _today_tmx_tmn_safe(nx: int, ny: int, api_key: str, base_date: str, base_time: str) -> dict:
-        """단기예보에서 오늘(TM X/TMN)만 추출."""
+        """단기예보에서 오늘 TMX/TMN만 추출 (KST 기준)"""
         url = "http://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getVilageFcst"
         params = {
             "serviceKey": unquote(api_key),
@@ -285,7 +279,6 @@ with tab2:
             if resp.get("header", {}).get("resultCode") != "00":
                 return {"TMX": None, "TMN": None}
             items = resp.get("body", {}).get("items", {}).get("item", [])
-            KST = dt.timezone(dt.timedelta(hours=9))
             today_kst = dt.datetime.now(dt.timezone.utc).astimezone(KST).strftime("%Y%m%d")
             tmx = tmn = None
             for it in items:
@@ -293,57 +286,63 @@ with tab2:
                     continue
                 cat = it.get("category")
                 try:
-                    val = float(it.get("fcstValue"))
+                    v = float(it.get("fcstValue"))
                 except (TypeError, ValueError):
                     continue
-                if cat == "TMX": tmx = val
-                elif cat == "TMN": tmn = val
+                if cat == "TMX": tmx = v
+                elif cat == "TMN": tmn = v
             return {"TMX": tmx, "TMN": tmn}
         except Exception:
             return {"TMX": None, "TMN": None}
 
     def _reverse_geocode_to_gu(lat: float, lon: float) -> dict:
-        """좌표 → {'city': '서울특별시', 'gu': '송파구'}"""
+        """좌표 → {'city': '서울특별시', 'gu': '동작구'} (정규화 포함)"""
         try:
             url = "https://nominatim.openstreetmap.org/reverse"
             params = {"format": "jsonv2", "lat": lat, "lon": lon, "addressdetails": 1, "zoom": 14}
             r = requests.get(url, params=params, headers={"User-Agent": "weatherpay/1.0"}, timeout=8)
-            data = r.json()
-            addr = data.get("address", {})
-            gu = addr.get("city_district") or addr.get("district") or addr.get("county") or ""
-            city = addr.get("city") or addr.get("state") or addr.get("region") or ""
-            if gu and not gu.endswith("구"):
-                if gu.endswith("-gu"):
-                    gu = gu.replace("-gu", "구")
-            if city in ("Seoul", "Seoul Metropolitan City"):
-                city = "서울특별시"
-            return {"gu": gu, "city": city}
+            addr = r.json().get("address", {})
+            city_raw = (addr.get("city") or addr.get("state") or addr.get("region") or "").strip()
+            gu_raw = (addr.get("city_district") or addr.get("district") or addr.get("county") or "").strip()
+            city = {
+                "Seoul": "서울특별시",
+                "Seoul Metropolitan City": "서울특별시",
+                "서울특별자치시": "서울특별시",
+                "서울특별시": "서울특별시",
+            }.get(city_raw, city_raw)
+            gu = gu_raw
+            if gu.endswith("-gu"): gu = gu.replace("-gu", "구")
+            if gu and not gu.endswith("구"): gu = gu + "구"
+            return {"city": city, "gu": gu}
         except Exception:
             return {}
 
-    # ---------- 본문 ----------
-    today = datetime.date.today()
+    def _haversine_km(a, b):
+        import math
+        lat1, lon1 = math.radians(a[0]), math.radians(a[1])
+        lat2, lon2 = math.radians(b[0]), math.radians(b[1])
+        dlat, dlon = lat2 - lat1, lon2 - lon1
+        h = math.sin(dlat/2)**2 + math.cos(lat1)*math.cos(lat2)*math.sin(dlon/2)**2
+        return 6371 * 2 * math.asin(math.sqrt(h))
 
-    if date_selected > today:
-        weather_fcst, base_date, base_time = get_weather(region, date_selected, KMA_API_KEY)
-        weather = weather_fcst
-    elif date_selected < today:
-        ymd = date_selected.strftime("%Y%m%d")
-        weather = get_asos_weather(region, ymd, ASOS_API_KEY)
-    else:
-        weather_fcst, base_date, base_time = get_weather(region, date_selected, KMA_API_KEY)
-        lat, lon = region_to_latlon[region]
-        nx, ny = convert_latlon_to_xy(lat, lon)
-        ultra = _ultra_now_safe(nx, ny, KMA_API_KEY)
-        weather = {
-            "TMX": weather_fcst.get("TMX"),
-            "TMN": weather_fcst.get("TMN"),
-            "REH": ultra.get("REH") if ultra.get("REH") is not None else weather_fcst.get("REH"),
-        }
+    def _nearest_gu(lat_f: float, lon_f: float, gu_centers: dict) -> str:
+        best_gu, best_d = None, 1e9
+        for gu, center in gu_centers.items():
+            d = _haversine_km((lat_f, lon_f), center)
+            if d < best_d:
+                best_d, best_gu = d, gu
+        return best_gu
 
-    st.subheader("실시간 위험 점수")
-    st.caption("내 위치(자치구) 기준으로 현재 기상조건을 반영해 온열질환 위험을 추정합니다.")
+    # ---------- 상단 헤더 (컬럼 배치) ----------
+    colH1, colH2 = st.columns([1, 1])
+    with colH1:
+        st.subheader("실시간 위험 점수")
+        st.caption("내 위치(자치구) 기준으로 현재 기상조건을 반영해 온열질환 위험을 추정합니다.")
+    with colH2:
+        now_kst = dt.datetime.now(dt.timezone.utc).astimezone(KST).strftime("%Y-%m-%d %H:%M")
+        st.markdown(f"<div style='text-align:right;color:#6b7280;'>기준시각(실황): {now_kst} KST</div>", unsafe_allow_html=True)
 
+    # 위치 버튼 (브라우저 권한 → 쿼리스트링 lat/lon)
     st.components.v1.html(
         """
         <script>
@@ -364,38 +363,35 @@ with tab2:
         height=50,
     )
 
+    # ---------- 날짜 분기 ----------
+    today = dt.date.today()
+    if date_selected > today:
+        weather_fcst, base_date, base_time = get_weather(region, date_selected, KMA_API_KEY)
+        weather = weather_fcst
+    elif date_selected < today:
+        ymd = date_selected.strftime("%Y%m%d")
+        weather = get_asos_weather(region, ymd, ASOS_API_KEY)
+    else:
+        weather_fcst, base_date, base_time = get_weather(region, date_selected, KMA_API_KEY)
+        lat0, lon0 = region_to_latlon[region]
+        nx0, ny0 = convert_latlon_to_xy(lat0, lon0)
+        ultra0 = _ultra_now_safe(nx0, ny0, KMA_API_KEY)
+        weather = {
+            "TMX": weather_fcst.get("TMX"),
+            "TMN": weather_fcst.get("TMN"),
+            "REH": ultra0.get("REH") if ultra0.get("REH") is not None else weather_fcst.get("REH"),
+        }
+
+    # ---------- 자치구 선택 (자동/수동 + 최근접 보정) ----------
     params = st.query_params
-    lat = params.get("lat", None)
-    lon = params.get("lon", None)
+    q_lat = params.get("lat", None)
+    q_lon = params.get("lon", None)
 
     seoul_gus = [
         '종로구','중구','용산구','성동구','광진구','동대문구','중랑구','성북구','강북구','도봉구',
         '노원구','은평구','서대문구','마포구','양천구','강서구','구로구','금천구','영등포구',
         '동작구','관악구','서초구','강남구','송파구','강동구'
     ]
-
-    detected_gu = None
-    if lat and lon:
-        try:
-            lat_f, lon_f = float(lat), float(lon)
-            rg = _reverse_geocode_to_gu(lat_f, lon_f)
-            if rg.get("city") in ("서울특별시", "서울특별자치시"):
-                detected_gu = rg.get("gu")
-        except Exception:
-            pass
-
-    colA, colB = st.columns(2)
-    with colA:
-        if detected_gu and detected_gu in seoul_gus:
-            st.success(f"내 위치 인식: {detected_gu}")
-            selected_gu = detected_gu
-        else:
-            selected_gu = st.selectbox("자치구 선택", seoul_gus, index=seoul_gus.index('송파구'))
-    with colB:
-        KST = dt.timezone(dt.timedelta(hours=9))
-        now_kst = dt.datetime.now(dt.timezone.utc).astimezone(KST).strftime("%Y-%m-%d %H:%M")
-        st.write(f"기준시각(실황): **{now_kst} KST**")
-
     gu_centers = {
         '종로구': (37.5731,126.9793), '중구': (37.5636,126.9976), '용산구': (37.5323,126.9907), '성동구': (37.5634,127.0368),
         '광진구': (37.5384,127.0823), '동대문구': (37.5744,127.0396), '중랑구': (37.6063,127.0927), '성북구': (37.5894,127.0167),
@@ -406,32 +402,63 @@ with tab2:
         '강동구': (37.5301,127.1238)
     }
 
-    if lat and lon:
-        lat_f, lon_f = float(lat), float(lon)
-    else:
-        lat_f, lon_f = gu_centers[selected_gu]
+    detected_gu = None
+    lat_f = lon_f = None
+    if q_lat and q_lon:
+        try:
+            lat_f, lon_f = float(q_lat), float(q_lon)
+            rg = _reverse_geocode_to_gu(lat_f, lon_f)
+            if rg.get("city") == "서울특별시" and rg.get("gu") in seoul_gus:
+                detected_gu = rg["gu"]
+            else:
+                detected_gu = _nearest_gu(lat_f, lon_f, gu_centers)
+        except Exception:
+            pass
 
+    colA, colB = st.columns([1, 1])
+    with colA:
+        if detected_gu and detected_gu in seoul_gus:
+            selected_gu = detected_gu
+            st.success(f"내 위치 인식: {selected_gu}")
+        else:
+            selected_gu = st.selectbox("자치구 선택", seoul_gus, index=seoul_gus.index('송파구'))
+    with colB:
+        st.empty()  # (상단 기준시각은 이미 헤더에 표시)
+
+    # ---------- 격자 좌표 산출 ----------
+    if lat_f is None or lon_f is None:
+        lat_f, lon_f = gu_centers[selected_gu]
     nx, ny = convert_latlon_to_xy(lat_f, lon_f)
 
+    # ---------- 오늘일 때: 초단기실황 + TMX/TMN 재확인 & 기준시각 업데이트 ----------
     if date_selected == today:
         ultra = _ultra_now_safe(nx, ny, KMA_API_KEY)
-        base_date_f, base_time_f = get_fixed_base_datetime(today)
-        tmx_tmn = _today_tmx_tmn_safe(nx, ny, KMA_API_KEY, base_date_f, base_time_f)
+        bd, bt = get_fixed_base_datetime(today)
+        tmx_tmn = _today_tmx_tmn_safe(nx, ny, KMA_API_KEY, bd, bt)
         tmx = tmx_tmn.get("TMX") or ultra.get("T1H")
         tmn = tmx_tmn.get("TMN") or ultra.get("T1H")
         reh = ultra.get("REH") or weather.get("REH")
-    else:
-        tmx = weather.get("TMX")
-        tmn = weather.get("TMN")
-        reh = weather.get("REH")
 
+        # 응답 기준시각이 있으면 상단 표기 갱신
+        if ultra.get("base_date") and ultra.get("base_time"):
+            bdisp = f"{ultra['base_date']} {ultra['base_time'][:2]}:{ultra['base_time'][2:]}"
+            colH2.markdown(
+                f"<div style='text-align:right;color:#6b7280;'>기준시각(실황): {bdisp} KST</div>",
+                unsafe_allow_html=True
+            )
+    else:
+        tmx, tmn, reh = weather.get("TMX"), weather.get("TMN"), weather.get("REH")
+
+    # ---------- 모델 입력 검증 ----------
     if not all(v is not None for v in [tmx, tmn, reh]):
         st.error("실시간 기상 입력을 충분히 확보하지 못했습니다. 잠시 후 다시 시도해주세요.")
         st.stop()
 
+    # ---------- 예측 ----------
     pred, avg_temp, heat_index, input_df = predict_from_weather(tmx, tmn, reh)
     risk = get_risk_level(pred)
 
+    # ---------- 출력 ----------
     st.markdown("#### 입력값(실시간)")
     st.dataframe(input_df, use_container_width=True)
 
@@ -441,7 +468,6 @@ with tab2:
     c3.metric("위험 등급", risk)
 
     st.info("무더위 휴식시간 준수, 수분·그늘·휴식 확보, 냉방 취약계층 보호를 권고합니다. 더 자세한 보상·피해점수는 Tab3에서 확인하세요.")
-
 
 with tab3:
     with st.expander("이 탭에서는 무엇을 하나요?"):

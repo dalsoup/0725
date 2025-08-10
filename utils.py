@@ -216,13 +216,24 @@ def _reverse_geocode_to_gu(lat: float, lon: float) -> dict:
         r = requests.get(url, params=params, headers={"User-Agent": "weatherpay/1.0"}, timeout=8)
         data = r.json()
         addr = data.get("address", {})
-        gu = addr.get("city_district") or addr.get("district") or addr.get("county") or ""
-        city = addr.get("city") or addr.get("state") or addr.get("region") or ""
-        if gu and not gu.endswith("구"):
-            if gu.endswith("-gu"):
-                gu = gu.replace("-gu", "구")
-        if city in ("Seoul", "Seoul Metropolitan City"):
-            city = "서울특별시"
+
+        # city/state/region 중 하나로 서울 판별
+        city_raw = (addr.get("city") or addr.get("state") or addr.get("region") or "").strip()
+        gu_raw = (addr.get("city_district") or addr.get("district") or addr.get("county") or "").strip()
+
+        # 표기 정규화
+        city_map = {
+            "Seoul": "서울특별시",
+            "Seoul Metropolitan City": "서울특별시",
+            "서울특별시": "서울특별시",
+            "서울특별자치시": "서울특별시",
+        }
+        city = city_map.get(city_raw, city_raw)
+
+        gu = gu_raw
+        if gu.endswith("-gu"): gu = gu.replace("-gu", "구")
+        if not gu.endswith("구") and gu: gu = gu + "구"
+
         return {"gu": gu, "city": city}
     except Exception:
         return {}
