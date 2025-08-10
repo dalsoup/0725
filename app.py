@@ -197,103 +197,153 @@ with tab1:
             st.error(f"처리 중 오류 발생: {e}")
 
 with tab2:
+    import datetime as dt
+    import requests
+    from urllib.parse import unquote
+
+    # ---------- 보조 함수 ----------
+    def _ultra_now_safe(nx: int, ny: int, api_key: str) -> dict:
+        """기상청 초단기실황(REH, T1H) 조회: 00/30 후보 + 전시간 폴백, resultCode 체크."""
+        KST = dt.timezone(dt.timedelta(hours=9))
+
+        def candidates():
+            now_kst = dt.datetime.now(dt.timezone.utc).astimezone(KST)
+            ref = now_kst - dt.timedelta(minutes=40)
+            hh = ref.strftime("%H")
+            mm = "30" if ref.minute >= 30 else "00"
+            d0 = ref.strftime("%Y%m%d")
+            c = [(d0, f"{hh}{mm}"),
+                 (d0, f"{hh}{'00' if mm=='30' else '30'}")]
+            prev = ref - dt.timedelta(hours=1)
+            d1 = prev.strftime("%Y%m%d"); h1 = prev.strftime("%H")
+            c += [(d1, f"{h1}30"), (d1, f"{h1}00")]
+            seen, out = set(), []
+            for bd, bt in c:
+                k = bd + bt
+                if k not in seen:
+                    seen.add(k)
+                    out.append((bd, bt))
+            return out
+
+        def call(bd, bt):
+            url = "http://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getUltraSrtNcst"
+            params = {
+                "serviceKey": unquote(api_key),
+                "dataType": "JSON",
+                "numOfRows": "100",
+                "pageNo": "1",
+                "base_date": bd,
+                "base_time": bt,
+                "nx": nx, "ny": ny,
+            }
+            r = requests.get(url, params=params, timeout=8)
+            r.raise_for_status()
+            resp = r.json().get("response", {})
+            if resp.get("header", {}).get("resultCode") != "00":
+                return None
+            items = resp.get("body", {}).get("items", {}).get("item", [])
+            reh = t1h = None
+            for it in items:
+                cat = it.get("category")
+                try:
+                    val = float(it.get("obsrValue"))
+                except (TypeError, ValueError):
+                    continue
+                if cat == "REH": reh = val
+                elif cat == "T1H": t1h = val
+            if reh is None and t1h is None:
+                return None
+            bdate = items[0].get("baseDate", bd) if items else bd
+            btime = items[0].get("baseTime", bt) if items else bt
+            return {"REH": reh, "T1H": t1h, "base_date": bdate, "base_time": btime}
+
+        for bd, bt in candidates():
+            try:
+                out = call(bd, bt)
+                if out:
+                    return out
+            except Exception:
+                continue
+        return {"REH": None, "T1H": None, "base_date": None, "base_time": None}
+
+    def _today_tmx_tmn_safe(nx: int, ny: int, api_key: str, base_date: str, base_time: str) -> dict:
+        """단기예보에서 오늘(TM X/TMN)만 추출."""
+        url = "http://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getVilageFcst"
+        params = {
+            "serviceKey": unquote(api_key),
+            "numOfRows": "1000",
+            "pageNo": "1",
+            "dataType": "JSON",
+            "base_date": base_date,
+            "base_time": base_time,
+            "nx": nx, "ny": ny,
+        }
+        try:
+            r = requests.get(url, params=params, timeout=10)
+            r.raise_for_status()
+            resp = r.json().get("response", {})
+            if resp.get("header", {}).get("resultCode") != "00":
+                return {"TMX": None, "TMN": None}
+            items = resp.get("body", {}).get("items", {}).get("item", [])
+            KST = dt.timezone(dt.timedelta(hours=9))
+            today_kst = dt.datetime.now(dt.timezone.utc).astimezone(KST).strftime("%Y%m%d")
+            tmx = tmn = None
+            for it in items:
+                if it.get("fcstDate") != today_kst:
+                    continue
+                cat = it.get("category")
+                try:
+                    val = float(it.get("fcstValue"))
+                except (TypeError, ValueError):
+                    continue
+                if cat == "TMX": tmx = val
+                elif cat == "TMN": tmn = val
+            return {"TMX": tmx, "TMN": tmn}
+        except Exception:
+            return {"TMX": None, "TMN": None}
+
+    def _reverse_geocode_to_gu(lat: float, lon: float) -> dict:
+        """좌표 → {'city': '서울특별시', 'gu': '송파구'}"""
+        try:
+            url = "https://nominatim.openstreetmap.org/reverse"
+            params = {"format": "jsonv2", "lat": lat, "lon": lon, "addressdetails": 1, "zoom": 14}
+            r = requests.get(url, params=params, headers={"User-Agent": "weatherpay/1.0"}, timeout=8)
+            data = r.json()
+            addr = data.get("address", {})
+            gu = addr.get("city_district") or addr.get("district") or addr.get("county") or ""
+            city = addr.get("city") or addr.get("state") or addr.get("region") or ""
+            if gu and not gu.endswith("구"):
+                if gu.endswith("-gu"):
+                    gu = gu.replace("-gu", "구")
+            if city in ("Seoul", "Seoul Metropolitan City"):
+                city = "서울특별시"
+            return {"gu": gu, "city": city}
+        except Exception:
+            return {}
+
+    # ---------- 본문 ----------
     today = datetime.date.today()
 
     if date_selected > today:
-        # 미래: 단기예보
-        weather, base_date, base_time = get_weather(region, date_selected, KMA_API_KEY)
+        weather_fcst, base_date, base_time = get_weather(region, date_selected, KMA_API_KEY)
+        weather = weather_fcst
     elif date_selected < today:
-        # 과거: ASOS 일 데이터
         ymd = date_selected.strftime("%Y%m%d")
         weather = get_asos_weather(region, ymd, ASOS_API_KEY)
     else:
-        # 오늘: 단기예보(TMX, TMN) + 초단기실황(REH)
         weather_fcst, base_date, base_time = get_weather(region, date_selected, KMA_API_KEY)
-
-        # 좌표 변환 함수는 utils에 이미 있음
-        from utils import region_to_latlon, convert_latlon_to_xy
         lat, lon = region_to_latlon[region]
         nx, ny = convert_latlon_to_xy(lat, lon)
-
-        ultra = _get_ultra_now(nx, ny, KMA_API_KEY)
-
+        ultra = _ultra_now_safe(nx, ny, KMA_API_KEY)
         weather = {
             "TMX": weather_fcst.get("TMX"),
             "TMN": weather_fcst.get("TMN"),
-            "REH": ultra.get("REH") if ultra.get("REH") is not None else weather_fcst.get("REH")
+            "REH": ultra.get("REH") if ultra.get("REH") is not None else weather_fcst.get("REH"),
         }
-
-    def _get_ultra_now(nx: int, ny: int, api_key: str):
-        """기상청 초단기실황(REH, T1H)을 조회해 dict로 반환"""
-        now = dt.datetime.now() - dt.timedelta(minutes=40)  # 발표시각 보정
-        base_date = now.strftime("%Y%m%d")
-        base_time = now.strftime("%H%M")
-
-        url = "http://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getUltraSrtNcst"
-        params = {
-            "serviceKey": api_key,
-            "numOfRows": "1000",
-            "pageNo": "1",
-            "dataType": "JSON",
-            "base_date": base_date,
-            "base_time": base_time,
-            "nx": nx,
-            "ny": ny,
-        }
-        try:
-            r = requests.get(url, params=params, timeout=10, verify=False)
-            items = r.json().get("response", {}).get("body", {}).get("items", {}).get("item", [])
-            out = {}
-            for it in items:
-                cat = it.get("category")
-                if cat in ("REH", "T1H"):
-                    out[cat] = float(it.get("obsrValue"))
-            return out
-        except Exception:
-            return {}
-
-    def _get_today_tmx_tmn(nx: int, ny: int, api_key: str, base_date: str, base_time: str):
-        """단기예보에서 TMX/TMN을 조회해 dict로 반환 (없으면 빈 dict)"""
-        url = "http://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getVilageFcst"
-        params = {
-            "serviceKey": api_key,
-            "numOfRows": "1000",
-            "pageNo": "1",
-            "dataType": "JSON",
-            "base_date": base_date,
-            "base_time": base_time,
-            "nx": nx,
-            "ny": ny,
-        }
-        try:
-            r = requests.get(url, params=params, timeout=10, verify=False)
-            items = r.json().get("response", {}).get("body", {}).get("items", {}).get("item", [])
-            today_str = dt.date.today().strftime("%Y%m%d")
-            tmx = tmn = None
-            for it in items:
-                if it.get("fcstDate") != today_str:
-                    continue
-                if it.get("category") == "TMX":
-                    tmx = float(it.get("fcstValue"))
-                elif it.get("category") == "TMN":
-                    tmn = float(it.get("fcstValue"))
-            out = {}
-            if tmx is not None:
-                out["TMX"] = tmx
-            if tmn is not None:
-                out["TMN"] = tmn
-            return out
-        except Exception:
-            return {}
-
-    def _reverse_geocode_to_gu(lat: float, lon: float) -> dict:
-        """좌표 -> {'city': '서울특별시', 'gu': '송파구'} 형태."""
-        return {}
 
     st.subheader("실시간 위험 점수")
     st.caption("내 위치(자치구) 기준으로 현재 기상조건을 반영해 온열질환 위험을 추정합니다.")
 
-    # 위치 획득(실험): 브라우저 위치 권한으로 lat/lon을 쿼리스트링에 주입 → Streamlit에서 읽기
     st.components.v1.html(
         """
         <script>
@@ -318,7 +368,6 @@ with tab2:
     lat = params.get("lat", None)
     lon = params.get("lon", None)
 
-    # 수동 자치구 선택(대안)
     seoul_gus = [
         '종로구','중구','용산구','성동구','광진구','동대문구','중랑구','성북구','강북구','도봉구',
         '노원구','은평구','서대문구','마포구','양천구','강서구','구로구','금천구','영등포구',
@@ -330,9 +379,8 @@ with tab2:
         try:
             lat_f, lon_f = float(lat), float(lon)
             rg = _reverse_geocode_to_gu(lat_f, lon_f)
-            if rg.get("city") == "서울특별자치시" or rg.get("city") == "서울특별시":
+            if rg.get("city") in ("서울특별시", "서울특별자치시"):
                 detected_gu = rg.get("gu")
-            # 서울 인접이거나 구 탐지 실패 시 가까운 구는 수동 선택 유도
         except Exception:
             pass
 
@@ -344,10 +392,10 @@ with tab2:
         else:
             selected_gu = st.selectbox("자치구 선택", seoul_gus, index=seoul_gus.index('송파구'))
     with colB:
-        now_kst = dt.datetime.now().strftime("%Y-%m-%d %H:%M")
+        KST = dt.timezone(dt.timedelta(hours=9))
+        now_kst = dt.datetime.now(dt.timezone.utc).astimezone(KST).strftime("%Y-%m-%d %H:%M")
         st.write(f"기준시각(실황): **{now_kst} KST**")
 
-    # 좌표 → 격자(nx, ny) 산출: 구의 대표 좌표가 없으므로, 위치좌표 우선, 없으면 구 중심 좌표 테이블을 간단 매핑
     gu_centers = {
         '종로구': (37.5731,126.9793), '중구': (37.5636,126.9976), '용산구': (37.5323,126.9907), '성동구': (37.5634,127.0368),
         '광진구': (37.5384,127.0823), '동대문구': (37.5744,127.0396), '중랑구': (37.6063,127.0927), '성북구': (37.5894,127.0167),
@@ -363,42 +411,36 @@ with tab2:
     else:
         lat_f, lon_f = gu_centers[selected_gu]
 
-    from utils import convert_latlon_to_xy, get_fixed_base_datetime, get_risk_level
     nx, ny = convert_latlon_to_xy(lat_f, lon_f)
 
-    # 초단기 실황으로 현재 REH/T1H 수집
-    ultra = _get_ultra_now(nx, ny, KMA_API_KEY)
-
-    # 단기예보에서 오늘 TMX/TMN 수집(기반시각은 utils의 규칙 사용)
-    base_date, base_time = get_fixed_base_datetime(dt.date.today())
-    tmx_tmn = _get_today_tmx_tmn(nx, ny, KMA_API_KEY, base_date, base_time)
-
-    # 예측 입력값 구성: TMX/TMN(일예보) + REH(실황), 보정 로직(없으면 T1H로 대체)
-    tmx = tmx_tmn.get("TMX") or ultra.get("T1H")
-    tmn = tmx_tmn.get("TMN") or ultra.get("T1H")
-    reh = ultra.get("REH")
+    if date_selected == today:
+        ultra = _ultra_now_safe(nx, ny, KMA_API_KEY)
+        base_date_f, base_time_f = get_fixed_base_datetime(today)
+        tmx_tmn = _today_tmx_tmn_safe(nx, ny, KMA_API_KEY, base_date_f, base_time_f)
+        tmx = tmx_tmn.get("TMX") or ultra.get("T1H")
+        tmn = tmx_tmn.get("TMN") or ultra.get("T1H")
+        reh = ultra.get("REH") or weather.get("REH")
+    else:
+        tmx = weather.get("TMX")
+        tmn = weather.get("TMN")
+        reh = weather.get("REH")
 
     if not all(v is not None for v in [tmx, tmn, reh]):
         st.error("실시간 기상 입력을 충분히 확보하지 못했습니다. 잠시 후 다시 시도해주세요.")
         st.stop()
 
-    # 모델 예측
-    from model_utils import predict_from_weather
     pred, avg_temp, heat_index, input_df = predict_from_weather(tmx, tmn, reh)
     risk = get_risk_level(pred)
 
     st.markdown("#### 입력값(실시간)")
-    st.dataframe(input_df)
+    st.dataframe(input_df, use_container_width=True)
 
     c1, c2, c3 = st.columns(3)
     c1.metric("자치구", selected_gu)
     c2.metric("예측 환자 수(도시기준)", f"{pred:.2f}명")
     c3.metric("위험 등급", risk)
 
-    st.info(
-        "무더위 휴식시간 준수, 수분·그늘·휴식 확보, 냉방 취약계층 보호를 권고합니다. 더 자세한 보상·피해점수는 Tab3에서 확인하세요."
-    )
-
+    st.info("무더위 휴식시간 준수, 수분·그늘·휴식 확보, 냉방 취약계층 보호를 권고합니다. 더 자세한 보상·피해점수는 Tab3에서 확인하세요.")
 
 
 with tab3:

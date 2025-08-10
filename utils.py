@@ -1,7 +1,7 @@
 import requests
 import pandas as pd
 import datetime
-import datetime as dt  # ← dt 별칭 추가
+import datetime as dt 
 import math
 from urllib.parse import unquote
 
@@ -60,104 +60,35 @@ def compute_heat_index_kma2022(ta, rh):
     )
     return round(heat_index, 1)
 
-# ----------------------- 날씨 API 함수들 -----------------------
-def get_weather(region_name, target_date, KMA_API_KEY):
-    latlon = region_to_latlon.get(region_name, (37.5665, 126.9780))
-    nx, ny = convert_latlon_to_xy(*latlon)
-    base_date, base_time = get_fixed_base_datetime(target_date)
-    params = {
-        "serviceKey": KMA_API_KEY,
-        "numOfRows": "1000",
-        "pageNo": "1",
-        "dataType": "JSON",
-        "base_date": base_date,
-        "base_time": base_time,
-        "nx": nx,
-        "ny": ny
-    }
-    try:
-        r = requests.get(..., params=params, timeout=10)
-        r.raise_for_status()
-        resp = r.json().get("response", {})
-        if resp.get("header", {}).get("resultCode") != "00":
-            return {}, base_date, base_time
-        )
-        items = r.json().get("response", {}).get("body", {}).get("items", {}).get("item", [])
-        df = pd.DataFrame(items)
-        df["fcstDate"] = df["fcstDate"].astype(str)
-        target_str = target_date.strftime("%Y%m%d")
-        if target_str not in df["fcstDate"].values:
-            return {}, base_date, base_time
-        df = df[df["fcstDate"] == target_str]
-        df = df[df["category"].isin(["T3H", "TMX", "TMN", "REH"])]
-        summary = {}
-        for cat in ["TMX", "TMN", "REH", "T3H"]:
-            vals = df[df["category"] == cat]["fcstValue"].astype(float)
-            if not vals.empty:
-                summary[cat] = vals.mean() if cat in ["REH", "T3H"] else vals.iloc[0]
-        return summary, base_date, base_time
-    except Exception:
-        return {}, base_date, base_time
+# ----------------------- 공통 상수 -----------------------
+KMA_BASE = "http://apis.data.go.kr/1360000/"
+KST = dt.timezone(dt.timedelta(hours=9))
 
-def get_asos_weather(region, ymd, ASOS_API_KEY):
-    stn_id = region_to_stn_id[region]
-    url = "http://apis.data.go.kr/1360000/AsosDalyInfoService/getWthrDataList"
-    params = {
-        "serviceKey": ASOS_API_KEY,
-        "pageNo": 1,
-        "numOfRows": 10,
-        "dataType": "JSON",
-        "dataCd": "ASOS",
-        "dateCd": "DAY",
-        "startDt": ymd,
-        "endDt": ymd,
-        "stnIds": stn_id
-    }
-    try:
-        r = requests.get(url, params=params, timeout=10, verify=False)
-        item = r.json().get("response", {}).get("body", {}).get("items", {}).get("item", [])[0]
-        return {
-            "TMX": float(item["maxTa"]),
-            "TMN": float(item["minTa"]),
-            "REH": float(item["avgRhm"])
-        }
-    except Exception:
-        return {}
-
-def get_risk_level(pred):
-    if pred == 0: return "🟢 매우 낮음"
-    elif pred <= 2: return "🟡 낮음"
-    elif pred <= 5: return "🟠 보통"
-    elif pred <= 10: return "🔴 높음"
-    else: return "🔥 매우 높음"
-
-def calculate_avg_temp(tmx, tmn):
-    if tmx is not None and tmn is not None:
-        return round((tmx + tmn) / 2, 1)
-    return None
-
+# ----------------------- 좌표 변환 -----------------------
 def convert_latlon_to_xy(lat, lon):
     RE, GRID = 6371.00877, 5.0
     SLAT1, SLAT2, OLON, OLAT = 30.0, 60.0, 126.0, 38.0
     XO, YO = 43, 136
     DEGRAD = math.pi / 180.0
     re = RE / GRID
-    slat1, slat2 = 30.0 * DEGRAD, 60.0 * DEGRAD
-    olon, olat = 126.0 * DEGRAD, 38.0 * DEGRAD
-    sn = math.log(math.cos(slat1)/math.cos(slat2)) / math.log(math.tan(math.pi/4+slat2/2)/math.tan(math.pi/4+slat1/2))
-    sf = math.tan(math.pi/4+slat1/2)**sn * math.cos(slat1)/sn
-    ro = re * sf / (math.tan(math.pi/4+olat/2)**sn)
-    ra = re * sf / (math.tan(math.pi/4+lat*DEGRAD/2)**sn)
+    slat1, slat2 = SLAT1 * DEGRAD, SLAT2 * DEGRAD
+    olon, olat = OLON * DEGRAD, OLAT * DEGRAD
+    sn = math.log(math.cos(slat1) / math.cos(slat2)) / math.log(
+        math.tan(math.pi / 4 + slat2 / 2) / math.tan(math.pi / 4 + slat1 / 2)
+    )
+    sf = (math.tan(math.pi / 4 + slat1 / 2) ** sn) * (math.cos(slat1) / sn)
+    ro = re * sf / (math.tan(math.pi / 4 + olat / 2) ** sn)
+    ra = re * sf / (math.tan(math.pi / 4 + lat * DEGRAD / 2) ** sn)
     theta = lon * DEGRAD - olon
-    if theta > math.pi: theta -= 2*math.pi
-    if theta < -math.pi: theta += 2*math.pi
+    if theta > math.pi: theta -= 2 * math.pi
+    if theta < -math.pi: theta += 2 * math.pi
     theta *= sn
     x = ra * math.sin(theta) + XO + 0.5
     y = ro - ra * math.cos(theta) + YO + 0.5
     return int(x), int(y)
 
+# ----------------------- 예보 조회 기준 시각 -----------------------
 def get_fixed_base_datetime(target_date: datetime.date):
-    KST = dt.timezone(dt.timedelta(hours=9))
     now = dt.datetime.now(dt.timezone.utc).astimezone(KST)
     today_kst = now.date()
 
@@ -176,8 +107,106 @@ def get_fixed_base_datetime(target_date: datetime.date):
         # 과거/미래 조회용: target_date 유지
         return target_date.strftime("%Y%m%d"), "0500"
 
+# ----------------------- 날씨 API 함수들 -----------------------
+def get_weather(region_name, target_date: datetime.date, KMA_API_KEY: str):
+    """단기예보(getVilageFcst)에서 TMX/TMN/REH/T3H 추출."""
+    latlon = region_to_latlon.get(region_name, (37.5665, 126.9780))
+    nx, ny = convert_latlon_to_xy(*latlon)
+    base_date, base_time = get_fixed_base_datetime(target_date)
+
+    url = KMA_BASE + "VilageFcstInfoService_2.0/getVilageFcst"
+    params = {
+        "serviceKey": unquote(KMA_API_KEY),
+        "numOfRows": "1000",
+        "pageNo": "1",
+        "dataType": "JSON",
+        "base_date": base_date,
+        "base_time": base_time,
+        "nx": nx,
+        "ny": ny
+    }
+    try:
+        r = requests.get(url, params=params, timeout=10)
+        r.raise_for_status()
+        resp = r.json().get("response", {})
+        if resp.get("header", {}).get("resultCode") != "00":
+            return {}, base_date, base_time
+
+        items = resp.get("body", {}).get("items", {}).get("item", [])
+        if not items:
+            return {}, base_date, base_time
+
+        df = pd.DataFrame(items)
+        df["fcstDate"] = df["fcstDate"].astype(str)
+        target_str = target_date.strftime("%Y%m%d")
+        if target_str not in df["fcstDate"].values:
+            return {}, base_date, base_time
+
+        df = df[df["fcstDate"] == target_str]
+        df = df[df["category"].isin(["T3H", "TMX", "TMN", "REH"])]
+
+        summary = {}
+        for cat in ["TMX", "TMN", "REH", "T3H"]:
+            vals = df[df["category"] == cat]["fcstValue"]
+            if not vals.empty:
+                try:
+                    vals = vals.astype(float)
+                except Exception:
+                    continue
+                summary[cat] = vals.mean() if cat in ["REH", "T3H"] else float(vals.iloc[0])
+        return summary, base_date, base_time
+    except Exception:
+        return {}, base_date, base_time
+
+def get_asos_weather(region: str, ymd: str, ASOS_API_KEY: str):
+    """ASOS 일별 관측(getWthrDataList)에서 TMX/TMN/REH 추출."""
+    stn_id = region_to_stn_id[region]
+    url = KMA_BASE + "AsosDalyInfoService/getWthrDataList"
+    params = {
+        "serviceKey": unquote(ASOS_API_KEY),
+        "pageNo": 1,
+        "numOfRows": 10,
+        "dataType": "JSON",
+        "dataCd": "ASOS",
+        "dateCd": "DAY",
+        "startDt": ymd,
+        "endDt": ymd,
+        "stnIds": stn_id
+    }
+    try:
+        r = requests.get(url, params=params, timeout=10)
+        r.raise_for_status()
+        resp = r.json().get("response", {})
+        if resp.get("header", {}).get("resultCode") != "00":
+            return {}
+        items = resp.get("body", {}).get("items", {}).get("item", [])
+        if not items:
+            return {}
+        item = items[0]
+        out = {}
+        for k_in, k_out in [("maxTa", "TMX"), ("minTa", "TMN"), ("avgRhm", "REH")]:
+            try:
+                out[k_out] = float(item[k_in])
+            except Exception:
+                out[k_out] = None
+        return out
+    except Exception:
+        return {}
+
+def get_risk_level(pred: float):
+    if pred == 0: return "🟢 매우 낮음"
+    elif pred <= 2: return "🟡 낮음"
+    elif pred <= 5: return "🟠 보통"
+    elif pred <= 10: return "🔴 높음"
+    else: return "🔥 매우 높음"
+
+def calculate_avg_temp(tmx, tmn):
+    if tmx is not None and tmn is not None:
+        return round((tmx + tmn) / 2, 1)
+    return None
+
 # -------- 초단기/예보 보조 --------
-KMA_ULTRA_BASE = "http://apis.data.go.kr/1360000/"
+KMA_ULTRA_BASE = KMA_BASE
 
 @cache_data(ttl=300)
 def _reverse_geocode_to_gu(lat: float, lon: float) -> dict:
@@ -198,25 +227,20 @@ def _reverse_geocode_to_gu(lat: float, lon: float) -> dict:
     except Exception:
         return {}
 
-@cache_data(ttl=180)  
+@cache_data(ttl=180)
 def _get_ultra_now(nx: int, ny: int, KMA_API_KEY: str) -> dict:
     """기상청 초단기실황(REH, T1H) 조회 (00/30 교차 + 전시간 폴백, resultCode 체크)."""
-    KST = dt.timezone(dt.timedelta(hours=9))
-
     def compute_candidates():
         now_kst = dt.datetime.now(dt.timezone.utc).astimezone(KST)
         ref = now_kst - dt.timedelta(minutes=40)
         hh = ref.strftime("%H")
         mm = "30" if ref.minute >= 30 else "00"
         base_date = ref.strftime("%Y%m%d")
-
         cands = [(base_date, f"{hh}{mm}")]
         cands.append((base_date, f"{hh}{'00' if mm == '30' else '30'}"))
-
         prev = ref - dt.timedelta(hours=1)
         cands.append((prev.strftime("%Y%m%d"), f"{prev.strftime('%H')}30"))
         cands.append((prev.strftime("%Y%m%d"), f"{prev.strftime('%H')}00"))
-
         seen, uniq = set(), []
         for d, t in cands:
             k = d + t
@@ -227,7 +251,7 @@ def _get_ultra_now(nx: int, ny: int, KMA_API_KEY: str) -> dict:
     def call_api(base_date: str, base_time: str):
         url = KMA_ULTRA_BASE + "VilageFcstInfoService_2.0/getUltraSrtNcst"
         params = {
-            "serviceKey": unquote(KMA_API_KEY),  # 🔐 디코딩
+            "serviceKey": unquote(KMA_API_KEY),
             "dataType": "JSON",
             "numOfRows": "100",
             "pageNo": "1",
@@ -236,13 +260,12 @@ def _get_ultra_now(nx: int, ny: int, KMA_API_KEY: str) -> dict:
             "nx": nx,
             "ny": ny,
         }
-        r = requests.get(url, params=params, timeout=8)  # verify=True 기본
+        r = requests.get(url, params=params, timeout=8)
         r.raise_for_status()
         resp = r.json().get("response", {})
         header = resp.get("header", {})
         if header.get("resultCode") != "00":
-            return None  # 무자료/에러
-
+            return None
         items = resp.get("body", {}).get("items", {}).get("item", [])
         reh = t1h = None
         for it in items:
@@ -255,7 +278,6 @@ def _get_ultra_now(nx: int, ny: int, KMA_API_KEY: str) -> dict:
             elif cat == "T1H": t1h = val
         if reh is None and t1h is None:
             return None
-        # 응답의 기준시각이 있다면 그걸 우선시
         bdate = items[0].get("baseDate", base_date) if items else base_date
         btime = items[0].get("baseTime", base_time) if items else base_time
         return {"REH": reh, "T1H": t1h, "base_date": bdate, "base_time": btime}
@@ -264,13 +286,11 @@ def _get_ultra_now(nx: int, ny: int, KMA_API_KEY: str) -> dict:
     for bd, bt in compute_candidates():
         try:
             out = call_api(bd, bt)
-            if out: 
+            if out:
                 return out
         except Exception as e:
             last_err = e
             continue
-
-    # 모두 실패
     return {"REH": None, "T1H": None, "base_date": None, "base_time": None}
 
 @cache_data(ttl=600)
@@ -292,11 +312,8 @@ def _get_today_tmx_tmn(nx: int, ny: int, KMA_API_KEY: str, base_date: str, base_
         resp = r.json().get("response", {})
         if resp.get("header", {}).get("resultCode") != "00":
             return {"TMX": None, "TMN": None}
-
         items = resp.get("body", {}).get("items", {}).get("item", [])
         tmx = tmn = None
-        # KST 기준 오늘
-        KST = dt.timezone(dt.timedelta(hours=9))
         today_kst = dt.datetime.now(dt.timezone.utc).astimezone(KST).strftime("%Y%m%d")
         for it in items:
             if it.get("fcstDate") != today_kst:
