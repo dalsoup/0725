@@ -1,7 +1,18 @@
 import requests
 import pandas as pd
 import datetime
+import datetime as dt  # ← dt 별칭 추가
 import math
+
+# ---- Streamlit cache 안전 래퍼 ----
+try:
+    import streamlit as st
+    cache_data = st.cache_data
+except Exception:
+    def cache_data(*args, **kwargs):
+        def _wrap(fn):
+            return fn
+        return _wrap
 
 # ----------------------- 파라미터 정렬 -----------------------
 region_to_stn_id = {
@@ -31,7 +42,7 @@ def compute_tw_stull(ta, rh):
             - 4.686035
         )
         return round(tw, 3)
-    except:
+    except Exception:
         return None
 
 def compute_heat_index_kma2022(ta, rh):
@@ -64,7 +75,10 @@ def get_weather(region_name, target_date, KMA_API_KEY):
         "ny": ny
     }
     try:
-        r = requests.get("http://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getVilageFcst", params=params, timeout=10, verify=False)
+        r = requests.get(
+            "http://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getVilageFcst",
+            params=params, timeout=10, verify=False
+        )
         items = r.json().get("response", {}).get("body", {}).get("items", {}).get("item", [])
         df = pd.DataFrame(items)
         df["fcstDate"] = df["fcstDate"].astype(str)
@@ -79,12 +93,12 @@ def get_weather(region_name, target_date, KMA_API_KEY):
             if not vals.empty:
                 summary[cat] = vals.mean() if cat in ["REH", "T3H"] else vals.iloc[0]
         return summary, base_date, base_time
-    except:
+    except Exception:
         return {}, base_date, base_time
 
 def get_asos_weather(region, ymd, ASOS_API_KEY):
     stn_id = region_to_stn_id[region]
-    url = f"http://apis.data.go.kr/1360000/AsosDalyInfoService/getWthrDataList"
+    url = "http://apis.data.go.kr/1360000/AsosDalyInfoService/getWthrDataList"
     params = {
         "serviceKey": ASOS_API_KEY,
         "pageNo": 1,
@@ -104,7 +118,7 @@ def get_asos_weather(region, ymd, ASOS_API_KEY):
             "TMN": float(item["minTa"]),
             "REH": float(item["avgRhm"])
         }
-    except:
+    except Exception:
         return {}
 
 def get_risk_level(pred):
@@ -125,8 +139,8 @@ def convert_latlon_to_xy(lat, lon):
     XO, YO = 43, 136
     DEGRAD = math.pi / 180.0
     re = RE / GRID
-    slat1, slat2 = SLAT1 * DEGRAD, SLAT2 * DEGRAD
-    olon, olat = OLON * DEGRAD, OLAT * DEGRAD
+    slat1, slat2 = 30.0 * DEGRAD, 60.0 * DEGRAD
+    olon, olat = 126.0 * DEGRAD, 38.0 * DEGRAD
     sn = math.log(math.cos(slat1)/math.cos(slat2)) / math.log(math.tan(math.pi/4+slat2/2)/math.tan(math.pi/4+slat1/2))
     sf = math.tan(math.pi/4+slat1/2)**sn * math.cos(slat1)/sn
     ro = re * sf / (math.tan(math.pi/4+olat/2)**sn)
@@ -156,47 +170,34 @@ def get_fixed_base_datetime(target_date):
     else:
         return today.strftime("%Y%m%d"), "0500"
 
+# -------- 초단기/예보 보조 --------
+KMA_ULTRA_BASE = "http://apis.data.go.kr/1360000/"
 
-KMA_ULTRA_BASE = "http://apis.data.go.kr/1360000/"  # 초단기 실황/예보 공통
-
-@st.cache_data(ttl=300)
+@cache_data(ttl=300)
 def _reverse_geocode_to_gu(lat: float, lon: float) -> dict:
-    """좌표 → 행정구역(자치구) 역지오코딩 (Nominatim)
-    return: {"gu": "송파구", "city": "서울특별시"} (실패 시 {})
-    """
     try:
         url = "https://nominatim.openstreetmap.org/reverse"
-        params = {
-            "format": "jsonv2",
-            "lat": lat,
-            "lon": lon,
-            "addressdetails": 1,
-            "zoom": 14,
-        }
+        params = {"format": "jsonv2", "lat": lat, "lon": lon, "addressdetails": 1, "zoom": 14}
         r = requests.get(url, params=params, headers={"User-Agent": "weatherpay/1.0"}, timeout=8)
         data = r.json()
         addr = data.get("address", {})
-        # 서울 내 자치구는 district 또는 city_district 에 담기는 경우가 많음
         gu = addr.get("city_district") or addr.get("district") or addr.get("county") or ""
         city = addr.get("city") or addr.get("state") or addr.get("region") or ""
-        # 한글 'OO구' 형태 정제
         if gu and not gu.endswith("구"):
-            if gu.endswith("-gu"):  # e.g., Gangnam-gu
+            if gu.endswith("-gu"):
                 gu = gu.replace("-gu", "구")
-        # 서울 명시 정제
         if city in ("Seoul", "Seoul Metropolitan City"):
             city = "서울특별시"
         return {"gu": gu, "city": city}
     except Exception:
         return {}
 
-@st.cache_data(ttl=180)
+@cache_data(ttl=180)
 def _get_ultra_now(nx: int, ny: int, KMA_API_KEY: str) -> dict:
-    """초단기실황(getUltraSrtNcst): 현재시각 기준 REH(습도)와 T1H(기온) 조회"""
-    # 기상청 권장: 관측 시각 반영 지연 보정(40~70분) → 40분 이전 시각으로 요청
+    # 관측 지연 보정: 40분 전 정시
     now = dt.datetime.now() - dt.timedelta(minutes=40)
     base_date = now.strftime("%Y%m%d")
-    base_time = now.strftime("%H%M")[:2] + "00"  # 정시
+    base_time = now.strftime("%H%M")[:2] + "00"
     params = {
         "serviceKey": KMA_API_KEY,
         "dataType": "JSON",
@@ -211,25 +212,21 @@ def _get_ultra_now(nx: int, ny: int, KMA_API_KEY: str) -> dict:
     try:
         r = requests.get(url, params=params, timeout=8, verify=False)
         items = r.json().get("response", {}).get("body", {}).get("items", {}).get("item", [])
-        reh = None
-        t1h = None
+        reh = t1h = None
         for it in items:
             cat = it.get("category")
             try:
                 val = float(it.get("obsrValue"))
             except (TypeError, ValueError):
                 continue
-            if cat == "REH":
-                reh = val
-            elif cat == "T1H":
-                t1h = val
+            if cat == "REH": reh = val
+            elif cat == "T1H": t1h = val
         return {"REH": reh, "T1H": t1h, "base_date": base_date, "base_time": base_time}
     except Exception:
         return {"REH": None, "T1H": None, "base_date": base_date, "base_time": base_time}
 
-@st.cache_data(ttl=600)
+@cache_data(ttl=600)
 def _get_today_tmx_tmn(nx: int, ny: int, KMA_API_KEY: str, base_date: str, base_time: str) -> dict:
-    """단기예보(getVilageFcst)에서 오늘자 TMX/TMN(일 최고/최저) 추출"""
     params = {
         "serviceKey": KMA_API_KEY,
         "dataType": "JSON",
@@ -244,8 +241,7 @@ def _get_today_tmx_tmn(nx: int, ny: int, KMA_API_KEY: str, base_date: str, base_
     try:
         r = requests.get(url, params=params, timeout=8, verify=False)
         items = r.json().get("response", {}).get("body", {}).get("items", {}).get("item", [])
-        tmx = None
-        tmn = None
+        tmx = tmn = None
         today = dt.date.today().strftime("%Y%m%d")
         for it in items:
             if it.get("fcstDate") != today:
@@ -255,10 +251,8 @@ def _get_today_tmx_tmn(nx: int, ny: int, KMA_API_KEY: str, base_date: str, base_
                 val = float(it.get("fcstValue"))
             except (TypeError, ValueError):
                 continue
-            if cat == "TMX":
-                tmx = val
-            elif cat == "TMN":
-                tmn = val
+            if cat == "TMX": tmx = val
+            elif cat == "TMN": tmn = val
         return {"TMX": tmx, "TMN": tmn}
     except Exception:
         return {"TMX": None, "TMN": None}
