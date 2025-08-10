@@ -194,36 +194,65 @@ def _reverse_geocode_to_gu(lat: float, lon: float) -> dict:
 
 @cache_data(ttl=180)
 def _get_ultra_now(nx: int, ny: int, KMA_API_KEY: str) -> dict:
-    # 관측 지연 보정: 40분 전 정시
-    now = dt.datetime.now() - dt.timedelta(minutes=40)
-    base_date = now.strftime("%Y%m%d")
-    base_time = now.strftime("%H%M")[:2] + "00"
-    params = {
-        "serviceKey": KMA_API_KEY,
-        "dataType": "JSON",
-        "numOfRows": "100",
-        "pageNo": "1",
-        "base_date": base_date,
-        "base_time": base_time,
-        "nx": nx,
-        "ny": ny,
-    }
-    url = KMA_ULTRA_BASE + "VilageFcstInfoService_2.0/getUltraSrtNcst"
-    try:
-        r = requests.get(url, params=params, timeout=8, verify=False)
-        items = r.json().get("response", {}).get("body", {}).get("items", {}).get("item", [])
-        reh = t1h = None
-        for it in items:
-            cat = it.get("category")
-            try:
-                val = float(it.get("obsrValue"))
-            except (TypeError, ValueError):
-                continue
-            if cat == "REH": reh = val
-            elif cat == "T1H": t1h = val
-        return {"REH": reh, "T1H": t1h, "base_date": base_date, "base_time": base_time}
-    except Exception:
-        return {"REH": None, "T1H": None, "base_date": base_date, "base_time": base_time}
+    """
+    기상청 초단기실황(getUltraSrtNcst) REH/T1H 조회.
+    - 현재 시각 기준 40분 룰 적용: 09:28 → base_time=0900
+    - 데이터 없으면 한 시간 전 정시로 폴백
+    - 반환: {"REH": float|None, "T1H": float|None, "base_date": "YYYYMMDD", "base_time": "HHMM"}
+    """
+    def _compute_base_kst():
+        # 한국시간 기준 now
+        kst = dt.timezone(dt.timedelta(hours=9))
+        now_kst = dt.datetime.now(dt.UTC).astimezone(kst)
+
+        # 40분 이전이면 이전 시각을 기준으로
+        base_ref = now_kst - dt.timedelta(minutes=40)
+        base_date = base_ref.strftime("%Y%m%d")
+        base_time = base_ref.strftime("%H") + "00"
+        return base_date, base_time
+
+    def _call_api(base_date: str, base_time: str):
+        url = "http://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getUltraSrtNcst"
+        params = {
+            "serviceKey": KMA_API_KEY,
+            "dataType": "JSON",
+            "numOfRows": "100",
+            "pageNo": "1",
+            "base_date": base_date,
+            "base_time": base_time,
+            "nx": nx,
+            "ny": ny,
+        }
+        try:
+            r = requests.get(url, params=params, timeout=8, verify=False)
+            items = r.json().get("response", {}).get("body", {}).get("items", {}).get("item", [])
+            reh = t1h = None
+            for it in items:
+                cat = it.get("category")
+                try:
+                    val = float(it.get("obsrValue"))
+                except (TypeError, ValueError):
+                    continue
+                if cat == "REH": reh = val
+                elif cat == "T1H": t1h = val
+            return reh, t1h
+        except Exception:
+            return None, None
+
+    # 1차: 표준 발표시각
+    base_date, base_time = _compute_base_kst()
+    reh, t1h = _call_api(base_date, base_time)
+
+    # 2차: 데이터 없으면 한 시간 전 정시로 폴백
+    if reh is None and t1h is None:
+        kst = dt.timezone(dt.timedelta(hours=9))
+        base_dt = dt.datetime.strptime(base_date + base_time, "%Y%m%d%H%M").replace(tzinfo=kst)
+        fb_dt = base_dt - dt.timedelta(hours=1)
+        base_date = fb_dt.strftime("%Y%m%d")
+        base_time = fb_dt.strftime("%H") + "00"
+        reh, t1h = _call_api(base_date, base_time)
+
+    return {"REH": reh, "T1H": t1h, "base_date": base_date, "base_time": base_time}
 
 @cache_data(ttl=600)
 def _get_today_tmx_tmn(nx: int, ny: int, KMA_API_KEY: str, base_date: str, base_time: str) -> dict:
