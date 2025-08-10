@@ -192,27 +192,20 @@ def _reverse_geocode_to_gu(lat: float, lon: float) -> dict:
     except Exception:
         return {}
 
-@cache_data(ttl=180)
+@st.cache_data(ttl=180)
 def _get_ultra_now(nx: int, ny: int, KMA_API_KEY: str) -> dict:
-    """
-    기상청 초단기실황(getUltraSrtNcst) REH/T1H 조회.
-    - 현재 시각 기준 40분 룰 적용: 09:28 → base_time=0900
+    """기상청 초단기실황(REH, T1H) 조회.
+    - 40분 룰: 09:28 → base_time=0900
     - 데이터 없으면 한 시간 전 정시로 폴백
-    - 반환: {"REH": float|None, "T1H": float|None, "base_date": "YYYYMMDD", "base_time": "HHMM"}
     """
-    def _compute_base_kst():
-        # 한국시간 기준 now
+    def compute_base_kst():
         kst = dt.timezone(dt.timedelta(hours=9))
         now_kst = dt.datetime.now(dt.UTC).astimezone(kst)
+        ref = now_kst - dt.timedelta(minutes=40)
+        return ref.strftime("%Y%m%d"), ref.strftime("%H") + "00"
 
-        # 40분 이전이면 이전 시각을 기준으로
-        base_ref = now_kst - dt.timedelta(minutes=40)
-        base_date = base_ref.strftime("%Y%m%d")
-        base_time = base_ref.strftime("%H") + "00"
-        return base_date, base_time
-
-    def _call_api(base_date: str, base_time: str):
-        url = "http://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getUltraSrtNcst"
+    def call_api(base_date: str, base_time: str):
+        url = KMA_ULTRA_BASE + "VilageFcstInfoService_2.0/getUltraSrtNcst"
         params = {
             "serviceKey": KMA_API_KEY,
             "dataType": "JSON",
@@ -239,20 +232,19 @@ def _get_ultra_now(nx: int, ny: int, KMA_API_KEY: str) -> dict:
         except Exception:
             return None, None
 
-    # 1차: 표준 발표시각
-    base_date, base_time = _compute_base_kst()
-    reh, t1h = _call_api(base_date, base_time)
+    base_date, base_time = compute_base_kst()
+    reh, t1h = call_api(base_date, base_time)
 
-    # 2차: 데이터 없으면 한 시간 전 정시로 폴백
     if reh is None and t1h is None:
+        # 한 시간 전으로 폴백
         kst = dt.timezone(dt.timedelta(hours=9))
         base_dt = dt.datetime.strptime(base_date + base_time, "%Y%m%d%H%M").replace(tzinfo=kst)
-        fb_dt = base_dt - dt.timedelta(hours=1)
-        base_date = fb_dt.strftime("%Y%m%d")
-        base_time = fb_dt.strftime("%H") + "00"
-        reh, t1h = _call_api(base_date, base_time)
+        fb = base_dt - dt.timedelta(hours=1)
+        base_date, base_time = fb.strftime("%Y%m%d"), fb.strftime("%H") + "00"
+        reh, t1h = call_api(base_date, base_time)
 
     return {"REH": reh, "T1H": t1h, "base_date": base_date, "base_time": base_time}
+
 
 @cache_data(ttl=600)
 def _get_today_tmx_tmn(nx: int, ny: int, KMA_API_KEY: str, base_date: str, base_time: str) -> dict:

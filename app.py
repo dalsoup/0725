@@ -196,8 +196,33 @@ with tab1:
         except Exception as e:
             st.error(f"처리 중 오류 발생: {e}")
 
-
 with tab2:
+    today = datetime.date.today()
+
+    if date_selected > today:
+        # 미래: 단기예보
+        weather, base_date, base_time = get_weather(region, date_selected, KMA_API_KEY)
+    elif date_selected < today:
+        # 과거: ASOS 일 데이터
+        ymd = date_selected.strftime("%Y%m%d")
+        weather = get_asos_weather(region, ymd, ASOS_API_KEY)
+    else:
+        # 오늘: 단기예보(TMX, TMN) + 초단기실황(REH)
+        weather_fcst, base_date, base_time = get_weather(region, date_selected, KMA_API_KEY)
+
+        # 좌표 변환 함수는 utils에 이미 있음
+        from utils import region_to_latlon, convert_latlon_to_xy
+        lat, lon = region_to_latlon[region]
+        nx, ny = convert_latlon_to_xy(lat, lon)
+
+        ultra = _get_ultra_now(nx, ny, KMA_API_KEY)
+
+        weather = {
+            "TMX": weather_fcst.get("TMX"),
+            "TMN": weather_fcst.get("TMN"),
+            "REH": ultra.get("REH") if ultra.get("REH") is not None else weather_fcst.get("REH")
+        }
+
     def _get_ultra_now(nx: int, ny: int, api_key: str):
         """기상청 초단기실황(REH, T1H)을 조회해 dict로 반환"""
         now = dt.datetime.now() - dt.timedelta(minutes=40)  # 발표시각 보정
