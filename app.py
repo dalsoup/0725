@@ -61,8 +61,6 @@ with tab1:
         4. `ML_asos_dataset.csv`에 저장 후 자동 재학습 수행
 """)
 
-    region = st.selectbox("광역시도 선택", ["서울특별시"], key="region_tab1")
-
     all_gus = [
         '종로구', '중구', '용산구', '성동구', '광진구', '동대문구', '중랑구', '성북구', '강북구', '도봉구',
         '노원구', '은평구', '서대문구', '마포구', '양천구', '강서구', '구로구', '금천구', '영등포구',
@@ -340,31 +338,10 @@ with tab2:
     colH1, colH2 = st.columns([1, 1])
     with colH1:
         st.subheader("실시간 위험 점수")
-        st.caption("내 위치(자치구) 기준으로 현재 기상조건을 반영해 온열질환 위험을 추정합니다.")
+        st.caption("현재 나의 위치를 기준으로 기상조건을 반영해 온열질환 위험을 추정합니다.")
     with colH2:
         now_kst = dt.datetime.now(dt.timezone.utc).astimezone(KST).strftime("%Y-%m-%d %H:%M")
         st.markdown(f"<div style='text-align:right;color:#6b7280;'>기준시각(실황): {now_kst} KST</div>", unsafe_allow_html=True)
-
-    # 위치 버튼 (브라우저 권한 → 쿼리스트링 lat/lon)
-    st.components.v1.html(
-        """
-        <script>
-        function setLoc(){
-          if(!navigator.geolocation){ alert('위치 접근이 지원되지 않습니다.'); return; }
-          navigator.geolocation.getCurrentPosition(function(pos){
-            const lat = pos.coords.latitude.toFixed(6);
-            const lon = pos.coords.longitude.toFixed(6);
-            const url = new URL(window.location.href);
-            url.searchParams.set('lat', lat);
-            url.searchParams.set('lon', lon);
-            window.location.href = url.toString();
-          }, function(err){ alert('위치 접근이 거부되었거나 실패했습니다.'); });
-        }
-        </script>
-        <button onclick="setLoc()" style="padding:8px 12px;border-radius:10px;border:1px solid #ddd;cursor:pointer;">내 위치로 찾기</button>
-        """,
-        height=50,
-    )
 
     # ---------- 날짜 분기 ----------
     today = dt.date.today()
@@ -470,7 +447,6 @@ with tab2:
     c2.metric("예측 환자 수(도시기준)", f"{pred:.2f}명")
     c3.metric("위험 등급", risk)
 
-    st.info("무더위 휴식시간 준수, 수분·그늘·휴식 확보, 냉방 취약계층 보호를 권고합니다. 더 자세한 보상·피해점수는 Tab3에서 확인하세요.")
 
 with tab3:
     with st.expander("이 탭에서는 무엇을 하나요?"):
